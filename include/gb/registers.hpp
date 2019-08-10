@@ -22,7 +22,7 @@ namespace gb {
 			u8 regs[8];
 		};
 
-		Registers(): fa(), bc(), de(), hl(), sp(0xFFFE), pc(0x100) {}
+		Registers(): fa(), bc(), de(), hl(), sp(), pc() {}
 
 	};
 

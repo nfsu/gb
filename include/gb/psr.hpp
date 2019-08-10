@@ -28,15 +28,26 @@ namespace gb {
 		__forceinline void zero(bool b) { b ? v |= zMask : v &= ~zMask; }
 		__forceinline void subtract(bool b) { b ? v |= nMask : v &= ~nMask; }
 
+		__forceinline void setSubtract() { v |= nMask; }
+		__forceinline void clearSubtract() { v &= ~nMask; }
+
 		template<typename T>
 		__forceinline void setCodes(T a) {
 			zero(a == 0);
 		}
 
-		template<typename T>
+		template<bool sub, typename T>
 		__forceinline void setALU(T a, T, T c) {
 			carryHalf(c & 0x10);
-			carry(c < a);
+
+			if constexpr (sub) {
+				carry(c > a);
+				setSubtract();
+			} else {
+				carry(c < a);
+				clearSubtract();
+			}
+
 			setCodes(c);
 		}
 
