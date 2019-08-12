@@ -22,6 +22,10 @@ namespace gb {
 			u8 regs[8];
 		};
 
+		struct {
+			u16 lregs[6];
+		};
+
 		Registers(): fa(), bc(), de(), hl(), sp(), pc() {}
 
 	};
