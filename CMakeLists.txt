@@ -27,6 +27,8 @@ add_executable(
 	${gbSrc}
 )
 
+set_property(TARGET gb PROPERTY VS_DEBUGGER_WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/~)
+
 target_link_libraries(gb ocore)
 
 if(MSVC)

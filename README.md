@@ -31,43 +31,51 @@ Carry (C) is stored in 0x10. Is set if there was a carry from the highest nibble
 
 ## Memory
 
-### ROM #0 [0,0x4000]
+### Read
+
+#### ROM #0 [0,0x4000]
 
 The first 16 KiB is ROM bank 0. The first 0x100 bytes includes the boot ROM; which provides the scrolling Nintendo logo and setting up everything, as well as interrupts and resets. At 0x100 it includes the cartridge header, where all the cartridge's information (such as title) is stored. The first instruction generally jumps to the main function of the cartridge. 
 
-### ROM #n [0x4000, 0x8000]
+#### ROM #n [0x4000, 0x8000]
 
 If the ROM exceeds 32 KiB, this region is swappable. With games that don't allow this, this will be bytes 0x4000->0x8000 of ROM, otherwise 0x4000 * [n, n + 1] where n > 0.
 
-### VRAM [0x8000, 0xA000]
+### Write
 
-### Cartridge RAM [0xA000, 0xC000]
+
+
+### RW
+
+#### VRAM [0x8000, 0xA000]
+
+#### Cartridge RAM [0xA000, 0xC000]
 
 8 KiB RAM included on the cartridge, generally used for saving progress.
 
-### RAM #0 [0xC000, 0xD000]
+#### RAM #0 [0xC000, 0xD000]
 
-### RAM #n [0xD000, 0xE000]
+#### RAM #n [0xD000, 0xE000]
 
 The last 4 KiB of RAM is swappable, works the same as ROM (except writable).
 
-### Echo RAM [0xE000, 0xFE00]
+#### Echo RAM [0xE000, 0xFE00]
 
 Allows you to access 0xC000 -> 0xEE00, but should never be used in practice. This region is never used in official games.
 
-### OAM [0xFE00, 0xFFEA]
+#### OAM [0xFE00, 0xFFEA]
 
 Object attribute memory; for drawable sprites on screen.
 
-### I/O Registers [0xFF00, 0xFF80]
+#### I/O Registers [0xFF00, 0xFF80]
 
 Registers used for communicating with devices; such as the screen, sound or ppu.
 
-### Zero page [0xFF80, 0xFFFF]
+#### Zero page [0xFF80, 0xFFFF]
 
 This is very fast memory and is 127 bytes.
 
-### Interrupt enable flags [0xFFFF]
+#### Interrupt enable flags [0xFFFF]
 
 The last byte is the flags for enabling interrupts.
 
@@ -141,3 +149,26 @@ The instructions are bit masks. They set the Z flag depending on if the bit is c
 
 
 
+## Special thanks
+
+### Online resources
+
+These following resources have greatly helped me:
+
+Part 1 - 10 [Gameboy emulation  in JavaScript](http://imrannazar.com/GameBoy-Emulation-in-JavaScript:-The-CPU).
+[The ultimate Game Boy Talk 33c3](https://www.youtube.com/watch?v=HyzD8pNlpwI).
+[Gameboy opcodes diagram](http://techgate.fr/gb-doc/gameboy-opcodes.html).
+[Gameboy memory controllers](http://gbdev.gg8.se/wiki/articles/Memory_Bank_Controllers).
+[Gameboy CPU manual](http://marc.rawer.de/Gameboy/Docs/GBCPUman.pdf).
+Tetris assembly code.
+[Gameboy memory map](http://gameboy.mongenel.com/dmg/asmmemmap.html).
+
+Tetris assembly code.
+
+### Gbdev discord server
+
+The following people have helped me by giving advice on how to approach certain things such as the PPU:
+
+PinoBatch
+Max (ded)
+NieDzejkob

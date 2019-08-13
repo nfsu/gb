@@ -8,54 +8,18 @@ namespace gb {
 
 	struct NIOHandler { 
 		template<typename T, typename Memory, usz mapping> 
-		static _inline_ void exec(Memory *m, u16 addr, const T *t) {}
+		static _inline_ usz exec(Memory *m, u16 addr, const T *t) { return 0; }
 	};
 
 	struct IOHandler { 
 		template<typename T, typename Memory, usz mapping> 
-		static _inline_ void exec(Memory *m, u16 addr, const T *t) {
-			
-			t; m;
-
-			switch (addr & 0xFF) {
-
-				case 0xF:
-
-					if (m->flags[0]) {
-
-						const u8 u = u8(*t);
-						const u8 f = *(const u8*)(mapping | 0xFFFF), g = u & f;
-
-						if(g & 1)		//V-Blank
-							oic::System::log()->println("V-Blank");
-
-						if(g & 2)		//LCD STAT
-							oic::System::log()->println("LCD STAT");
-
-						if(g & 4)		//Timer
-							oic::System::log()->println("Timer");
-
-						if(g & 8)		//Serial
-							oic::System::log()->println("Serial");
-
-						if(g & 16)		//Joypad
-							oic::System::log()->println("Joypad");
-
-						m->set(addr, u8(u & ~g));
-
-					}
-
-					break;
-
-			}
-		
-		}
+		static _inline_ usz exec(Memory *m, u16 addr, const T *t);
 	};
 
 	struct MemoryMapper {
 
 		//Virtual memory located at 0x10000 -> 0x20000
-		static constexpr usz virtualMemory[2] = { 0x10000, 0x10000 }, flagCount = 1;
+		static constexpr usz virtualMemory[2] = { 0x10000, 0x10000 }, numberCount = 16;
 
 		template<typename Memory, typename T = void, typename IO = NIOHandler>
 		static _inline_ usz map(Memory *m, u16 a, const T *t = nullptr);
@@ -74,8 +38,17 @@ namespace gb {
 
 		void wait();
 
-		using Memory = emu::Memory16<MemoryMapper, MemoryMapper::flagCount>;
+		using Memory = emu::Memory16<MemoryMapper, MemoryMapper::numberCount>;
 		using Stack = emu::Stack<Memory, u16>;
+
+		enum Numbers {
+			FLAGS
+		};
+
+		enum Flags {
+			IME = 1,
+			LCD_CLEARED = 2
+		};
 
 		Registers r;
 		Memory memory;
@@ -88,11 +61,25 @@ namespace gb {
 
 		switch (a >> 12) {
 
+			case 0x0:
+			case 0x1:
+			case 0x2:
+			case 0x3:
+
+				if constexpr (!std::is_same_v<IO, NIOHandler>)
+					return IO::exec<T, Memory, virtualMemory[0]>(m, a, t);
+
+				break;
+
 			//Memory::Range{ 0x4000_u16, u16(16_KiB), false, "ROM #1", "Swappable ROM bank", banks[x] }
 			case 0x4:
 			case 0x5:
 			case 0x6:
 			case 0x7:
+
+				if constexpr (!std::is_same_v<IO, NIOHandler>)
+					return IO::exec<T, Memory, virtualMemory[0]>(m, a, t);
+
 				return m->getBankedMemory(0, 0 /* TODO: */, a - 0x4000);
 
 			//Memory::Range{ 0xD000_u16, u16(4_KiB), true, "RAM #1", "Swappable RAM bank", memoryBanks[x] },

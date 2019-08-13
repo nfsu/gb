@@ -4,6 +4,8 @@
 
 namespace gb {
 
+	//Memory emulation
+
 	//Split rom buffer into separate banks
 	_inline_ List<emu::MemoryBanks> makeBanks(const Buffer &rom) {
 
@@ -42,7 +44,7 @@ namespace gb {
 
 		return List<emu::MemoryBanks>{ 
 			emu::MemoryBanks(romBanks, 16_KiB, rom, 16_KiB, rom.size()),
-			emu::MemoryBanks(ramBanks, ramBankSize)
+			emu::MemoryBanks(ramBanks, ramBankSize * 1_KiB)
 		};
 	}
 
@@ -57,14 +59,62 @@ namespace gb {
 		makeBanks(rom) 
 	) { }
 
-	_inline_ usz step(Registers &r, Emulator::Memory &mem);
+	template<typename T, typename Memory, usz mapping>
+	_inline_ usz IOHandler::exec(Memory *m, u16 addr, const T *t) {
+			
+		if (addr < 0x8000)
+			return mapping | 0xFEA0;	//Write into unused memory
+
+		t; m;
+
+		switch (addr & 0xFF) {
+
+			case 0xF:
+
+				if (m->values[0] & Emulator::IME) {
+
+					const u8 u = u8(*t);
+					const u8 f = *(const u8*)(mapping | 0xFFFF), g = u & f;
+
+					if(g & 1)		//V-Blank
+						oic::System::log()->println("V-Blank");
+
+					if(g & 2)		//LCD STAT
+						oic::System::log()->println("LCD STAT");
+
+					if(g & 4)		//Timer
+						oic::System::log()->println("Timer");
+
+					if(g & 8)		//Serial
+						oic::System::log()->println("Serial");
+
+					if(g & 16)		//Joypad
+						oic::System::log()->println("Joypad");
+
+					m->set(addr, u8(u & ~g));
+
+				}
+
+				break;
+
+		}
+		
+		return addr;
+	}
+
+	//CPU/GPU emulation
+
+	_inline_ usz cpuStep(Registers &r, Emulator::Memory &mem);
+	_inline_ usz ppuStep(usz ppuCycle, Emulator::Memory &mem);
 
 	void Emulator::wait() {
 
-		usz cycles{};
+		usz cycles{}, ppuCycle{};
 
-		while (true)
-			cycles += step(r, memory);
+		while (true) {
+			cycles += cpuStep(r, memory);
+			ppuCycle = ppuStep(ppuCycle, memory);
+		}
 	}
 
 	//For our switch case of 256 entries
@@ -118,9 +168,12 @@ namespace gb {
 		return 4;
 	}
 	
-	template<bool enable>
+	template<bool enable, usz loc = 0, usz flag = 1>
 	static _inline_ void interrupt(Emulator::Memory &mem) {
-		mem.flags[0] = enable;
+		if constexpr (enable)
+			mem.values[loc] |= flag;
+		else
+			mem.values[loc] &= ~flag;
 	}
 
 	//LD operations
@@ -396,7 +449,7 @@ namespace gb {
 			return halt();
 
 		else if constexpr (c == DI || c == EI) {		//DI/EI; disable/enable interrupts
-			usz cycles = 4 + step(r, mem);
+			usz cycles = 4 + cpuStep(r, mem);
 			interrupt<c == EI>(mem);
 			return cycles;
 		}
@@ -467,7 +520,7 @@ namespace gb {
 
 	//Switch case of all opcodes
 
-	_inline_ usz step(Registers &r, Emulator::Memory &mem) {
+	_inline_ usz cpuStep(Registers &r, Emulator::Memory &mem) {
 
 		u8 opCode = mem.get<u8>(r.pc);
 		++r.pc;
@@ -477,6 +530,106 @@ namespace gb {
 		}
 
 		return 0;
+	}
+
+	_inline_ void pushLine(Emulator::Memory &) {
+		//TODO:
+	}
+
+	_inline_ void pushScreen() {
+		//TODO:
+	}
+
+	_inline_ void pushBlank() {
+		//TODO:
+	}
+
+	_inline_ usz ppuStep(usz ppuCycle, Emulator::Memory &mem) {
+
+		static constexpr u16 ctrl = 0xFF40, stat = 0xFF41, ly = 0xFF44;
+
+		enum Modes {
+			HBLANK = 0,			HBLANK_INTERVAL = 204,
+			VBLANK = 1,			VBLANK_INTERVAL = 456,
+			OAM = 2,			OAM_INTERVAL = 80,
+			VRAM = 3,			VRAM_INTERVAL = 172
+		};
+
+		//Push populated frame
+		if (mem.get<u8>(ctrl) & 0x80) {
+
+			mem.values[Emulator::FLAGS] &= ~Emulator::LCD_CLEARED;
+
+			u8 lcdc = mem.get<u8>(stat);
+			u8 mode = lcdc & 3;
+
+			switch (mode) {
+
+				case HBLANK:
+
+					if (ppuCycle == HBLANK_INTERVAL) {
+
+						//Push to screen and restart vblank
+						if (mem.increment<u8>(ly) == 143) {
+							pushScreen();
+							goto incrReset;
+						}
+
+						//Start scanline
+						mode = OAM;
+						goto reset;
+					}
+
+					break;
+
+				case VBLANK:
+
+					if (ppuCycle == VBLANK_INTERVAL) {
+
+						if (mem.increment<u8>(ly) > 153) {
+							mem.set<u8>(ly, 0);
+							goto incrReset;
+						}
+
+						return 0;
+					}
+					
+					break;
+
+				case OAM:
+
+					if (ppuCycle == OAM_INTERVAL)
+						goto incrReset;
+					
+					break;
+
+				case VRAM:
+
+					if (ppuCycle == VRAM_INTERVAL) {
+						pushLine(mem);
+						goto incrReset;
+					}
+
+			}
+
+			return ppuCycle + 1;
+
+		incrReset:
+			++mode;
+
+		reset:
+
+			mem.set<u8>(stat, (lcdc & ~3) | (mode & 3));
+			return 0;
+		}
+
+		//Push blank frame
+		else if (!(mem.values[Emulator::FLAGS] & Emulator::LCD_CLEARED)) {
+			pushBlank();
+			mem.values[Emulator::FLAGS] |= Emulator::LCD_CLEARED;
+		}
+
+		return ppuCycle;
 	}
 
 }
