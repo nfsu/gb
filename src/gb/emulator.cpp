@@ -1,5 +1,6 @@
 #include "gb/emulator.hpp"
 #include "emu/helper.hpp"
+#include "system/viewport_manager.hpp"
 #undef min
 
 namespace gb {
@@ -7,7 +8,7 @@ namespace gb {
 	//Memory emulation
 
 	//Split rom buffer into separate banks
-	_inline_ List<emu::MemoryBanks> makeBanks(const Buffer &rom) {
+	_inline_ List<emu::ProgramMemoryRange> makeBanks(const Buffer &rom) {
 
 		if (rom.size() < 0x14D)
 			oic::System::log()->fatal("ROM requires a minimum size of 0x14D");
@@ -15,25 +16,25 @@ namespace gb {
 		usz x = 0;
 
 		for (usz i = 0x134; i < 0x14D; ++i)
-			x -= usz(u8(rom[i]) + 1);
+			x -= usz(u8(rom[i] + 1));
 
 		if(u8(x) != rom[0x14D])
 			oic::System::log()->fatal("ROM has an invalid checksum");
 
-		usz romBanks = rom[0x148];
+		usz romBankSize = 16_KiB, romBanks = rom[0x148];
 
 		switch (romBanks) {
 			case 52: romBanks = 72;						break;
 			case 53: romBanks = 80;						break;
 			case 54: romBanks = 96;						break;
-			default: romBanks = 2 << romBanks;
+			default: romBanks = usz(2 << romBanks);
 		}
 
-		usz ramBankSize = 8, ramBanks = rom[0x149];
+		usz ramBankSize = 8_KiB, ramBanks = rom[0x149];
 
 		switch (ramBanks) {
 			case 0: ramBanks = 1;						break;
-			case 1: ramBankSize = 2;					break;
+			case 1: ramBankSize = 2_KiB;				break;
 			case 2: ramBanks = 1;						break;
 			case 3: ramBanks = 4;						break;
 			case 4: ramBanks = 16;						break;
@@ -42,21 +43,27 @@ namespace gb {
 				oic::System::log()->fatal("RAM banks are invalid");
 		}
 
-		return List<emu::MemoryBanks>{ 
-			emu::MemoryBanks(romBanks, 16_KiB, rom, 16_KiB, rom.size()),
-			emu::MemoryBanks(ramBanks, ramBankSize * 1_KiB)
+		using Range = emu::ProgramMemoryRange;
+
+		return List<Range>{
+			Range{ MemoryMapper::cpuStart, MemoryMapper::cpuLength, true, "CPU", "CPU Memory", {}, false },
+			Range{ MemoryMapper::ppuStart, MemoryMapper::ppuLength, true, "PPU", "Pixel Processing Unit", {} },
+			Range{ MemoryMapper::ramStart, ramBankSize * ramBanks, true, "RAM #n", "RAM Banks", {} },
+			Range{ MemoryMapper::romStart, romBankSize * romBanks, false, "ROM #n", "ROM Banks", rom },
+			Range{ MemoryMapper::mmuStart, MemoryMapper::mmuLength, true, "MMU", "Memory Unit additional variables", {} }
 		};
 	}
 
 	Emulator::Emulator(const Buffer &rom): memory(
+		makeBanks(rom),
 		List<Memory::Range>{
-			Memory::Range{ 0x0000_u16, u16(16_KiB), false, "ROM #0", "ROM bank #0", Buffer(rom.data(), rom.data() + 16_KiB) },
+			Memory::Range{ 0x0000_u16, u16(32_KiB), false, "ROM", "Readonly memory", {}, false },
 			Memory::Range{ 0x8000_u16, u16(8_KiB), true, "VRAM", "Video memory", {} },
 			Memory::Range{ 0xA000_u16, u16(8_KiB), true, "SAV", "Cartridge RAM", {} },
-			Memory::Range{ 0xC000_u16, u16(4_KiB), true, "RAM #0", "RAM bank #0", {} },
+			Memory::Range{ 0xC000_u16, u16(8_KiB), true, "RAM", "Random access memory", {}, false },
+			Memory::Range{ 0xE000_u16, u16(0xFE00 - 0xE000), true, "ERAM", "Echo RAM", {}, false },
 			Memory::Range{ 0xFE00_u16, 512_u16, true, "I/O", "Input Output registers", {} }
-		},
-		makeBanks(rom) 
+		}
 	) { }
 
 	template<typename T, typename Memory, usz mapping>
@@ -71,7 +78,7 @@ namespace gb {
 
 			case 0xF:
 
-				if (m->values[0] & Emulator::IME) {
+				if (m->getMemory<u8>(Emulator::FLAGS) & Emulator::IME) {
 
 					const u8 u = u8(*t);
 					const u8 f = *(const u8*)(mapping | 0xFFFF), g = u & f;
@@ -107,26 +114,20 @@ namespace gb {
 	_inline_ usz cpuStep(Registers &r, Emulator::Memory &mem);
 	_inline_ usz ppuStep(usz ppuCycle, Emulator::Memory &mem);
 
+	template<bool on>
+	_inline_ void pushBlank();
+
 	void Emulator::wait() {
 
 		usz cycles{}, ppuCycle{};
+
+		pushBlank<false>();
 
 		while (true) {
 			cycles += cpuStep(r, memory);
 			ppuCycle = ppuStep(ppuCycle, memory);
 		}
 	}
-
-	//For our switch case of 256 entries
-	#define case1(x) case x: return op<x>(r, mem);
-	#define case2(x) case1(x) case1(x + 1)
-	#define case4(x) case2(x) case2(x + 2)
-	#define case8(x) case4(x) case4(x + 4)
-	#define case16(x) case8(x) case8(x + 8)
-	#define case32(x) case16(x) case16(x + 16)
-	#define case64(x) case32(x) case32(x + 32)
-	#define case128(x) case64(x) case64(x + 64)
-	#define case256() case128(0) case128(128)
 
 	//Function for setting a cr
 
@@ -168,12 +169,12 @@ namespace gb {
 		return 4;
 	}
 	
-	template<bool enable, usz loc = 0, usz flag = 1>
-	static _inline_ void interrupt(Emulator::Memory &mem) {
+	template<bool enable, usz flag>
+	static _inline_ void setFlag(Emulator::Memory &mem) {
 		if constexpr (enable)
-			mem.values[loc] |= flag;
+			mem.getMemory<u8>(Emulator::FLAGS) |= flag;
 		else
-			mem.values[loc] &= ~flag;
+			mem.getMemory<u8>(Emulator::FLAGS) &= ~flag;
 	}
 
 	//LD operations
@@ -315,7 +316,7 @@ namespace gb {
 			Emulator::Stack::pop(m, r.sp, r.pc);
 
 			if constexpr ((jp & 8) != 0)
-				interrupt<true>(m);
+				setFlag<true, Emulator::IME>(m);
 
 			return check == 0 ? 16 : 20;
 
@@ -433,7 +434,84 @@ namespace gb {
 		DI = 0xF3, EI = 0xFB
 	};
 
-	template<u8 c> static _inline_ usz op(Registers &r, Emulator::Memory &mem) {
+	static _inline_ usz cbInstruction(Registers &r, Emulator::Memory &mem);
+
+	template<u8 c> static _inline_ usz opCb(Registers &r, Emulator::Memory &mem) {
+
+		static constexpr u8 p = (c >> 3) & 7;
+		static constexpr u8 cr = c & 7;
+
+		//Barrel shifts
+		if constexpr (c < 0x40) {
+			
+			r.f.clearSubtract();
+			r.f.clearHalf();
+
+			u8 i = get<cr, u8>(r, mem), j = i;	j;
+
+			//RLC (rotate to the left)
+			if constexpr (p == 0)
+				r.a = i = u8(i << 1) | u8(i >> 7);
+
+			//RRC (rotate to the right)
+			else if constexpr (p == 1)
+				r.a = i = u8(i >> 1) | u8(i << 7);
+
+			//RL (<<1 shift in carry)
+			else if constexpr (p == 2)
+				r.a = i = (i << 1) | u8(r.f.carry());
+
+			//RR (>>1 shift in carry)
+			else if constexpr (p == 3)
+				r.a = i = (i >> 1) | u8(0x80 * r.f.carry());
+
+			//SLA (a = cr << 1)
+			else if constexpr (p == 4)
+				r.a = i <<= 1;
+
+			//SRA (a = cr >> 1 (maintain sign))
+			else if constexpr (p == 5)
+				r.a = i = (i >> 1) | (i & 0x80);
+
+			//Swap two nibbles
+			else if constexpr (p == 6)
+				r.a = i = u8(i << 4) | (i >> 4);
+
+			//SRL
+			else
+				r.a = i >>= 1;
+
+			//Set carry
+			if constexpr ((p & 1) == 1)
+				r.f.carry(j & 1);
+			else if constexpr (p < 6)
+				r.f.carry(j & 0x80);
+			else
+				r.f.clearCarry();
+
+			//Set zero
+			r.f.zero(i == 0);
+		}
+
+		//Bit masks
+		else if constexpr (c < 0x80) {
+			r.f.setHalf();
+			r.f.clearSubtract();
+			r.f.zero(get<cr, u8>(r, mem) & (1 << p));
+		}
+
+		//Reset bit
+		else if constexpr (c < 0xC0)
+			set<cr, u8>(r, mem, get<cr, u8>(r, mem) & ~(1 << p));
+
+		//Set bit
+		else
+			set<cr, u8>(r, mem, get<cr, u8>(r, mem) | (1 << p));
+
+		return cr == 6 ? 16 : 8;
+	}
+
+	template<u8 c> static _inline_ usz op256(Registers &r, Emulator::Memory &mem) {
 
 		mem; r;
 
@@ -448,19 +526,27 @@ namespace gb {
 		else if constexpr (c == HALT)
 			return halt();
 
-		else if constexpr (c == DI || c == EI) {		//DI/EI; disable/enable interrupts
+		//DI/EI; disable/enable interrupts
+		else if constexpr (c == DI || c == EI) {
 			usz cycles = 4 + cpuStep(r, mem);
-			interrupt<c == EI>(mem);
+			setFlag<c == EI, Emulator::IME>(mem);
 			return cycles;
 		}
 
-		else if constexpr (isJump<c, code, hi>)	//RET, JP, JR and CALL
+		//RET, JP, JR and CALL
+		else if constexpr (isJump<c, code, hi>)
 			return jmp<c, code>(r, mem);
+
+		//RLCA, RLA, RRCA, RRA
+		else if constexpr (c < 0x20 && code == 7)
+			return opCb<c>(r, mem);
 
 		else if constexpr (c < 0x40) {
 
-			if constexpr ((c & 0xF) == 1)
+			if constexpr (hi == 1)
 				return lds<c>(r, mem);
+
+			//TODO: hi == 0x9 (ADD HL, r16)
 
 			else if constexpr (code == 3)
 				return incs<c>(r);
@@ -470,6 +556,9 @@ namespace gb {
 
 			else if constexpr (code == 2 || code == 6)
 				return ldi<c>(r, mem);
+
+			//TODO: DAA, SCF, CPL, CCF
+			//TODO: LD (a16), SP
 
 			else
 				throw std::exception();
@@ -507,12 +596,35 @@ namespace gb {
 			return 4;
 		}
 
-		//TODO: RLCA/RRCA/RLA/RRA
-		//TODO: ADD HL, lreg
-		//TODO: PUSH/POP lreg
+		//CB instructions (mask, reset, set, rlc/rrc/rl/rr/sla/sra/swap/srl)
+		else if constexpr (c == 0xCB)
+			return cbInstruction(r, mem);
+
+		//PUSH/POP
+		else if constexpr (hi == 1 || hi == 5) {
+
+			static constexpr u8 reg = (c - 0xC0) >> 4;
+
+			//Flip bytes for pushing, since AF register is FA for us
+			if constexpr (hi != 1)
+				r.fa = (r.f.v << 8) | r.a;
+
+			//Push to or pop from stack
+			if constexpr (hi == 1)
+				Emulator::Stack::pop(mem, r.sp, r.lregs[reg]);
+			else
+				Emulator::Stack::push(mem, r.sp, r.lregs[reg]);
+
+			//Flip bytes for af instruction, since AF register is FA for us
+			if constexpr (reg == 3)
+				r.fa = (r.f.v << 8) | r.a;	//Flip bytes, since AF register is FA for us
+
+			return hi == 1 ? 12 : 16;
+		}
+
 		//TODO: ADD SP, r8
-		//TODO: LD HL SP, HL
-		//TODO:	DAA/SCF/CPL/CCF
+		//TODO: LD HL, SP+a8
+		//TODO: LD SP, HL
 
 		else										//Undefined operation
 			throw std::exception();
@@ -520,13 +632,36 @@ namespace gb {
 
 	//Switch case of all opcodes
 
+	//For our switch case of 256 entries
+	#define case1(x,y) case x: return op##y<x>(r, mem);
+	#define case2(x,y) case1(x,y) case1(x + 1,y)
+	#define case4(x,y) case2(x,y) case2(x + 2,y)
+	#define case8(x,y) case4(x,y) case4(x + 4,y)
+	#define case16(x,y) case8(x,y) case8(x + 8,y)
+	#define case32(x,y) case16(x,y) case16(x + 16,y)
+	#define case64(x,y) case32(x,y) case32(x + 32,y)
+	#define case128(x,y) case64(x,y) case64(x + 64,y)
+	#define case256(y) case128(0,y) case128(128,y)
+
+	static _inline_ usz cbInstruction(Registers &r, Emulator::Memory &mem) {
+
+		u8 opCode = mem.get<u8>(r.pc);
+		++r.pc;
+
+		switch (opCode) {
+			case256(Cb)
+		}
+
+		return 0;
+	}
+
 	_inline_ usz cpuStep(Registers &r, Emulator::Memory &mem) {
 
 		u8 opCode = mem.get<u8>(r.pc);
 		++r.pc;
 
 		switch (opCode) {
-			case256()
+			case256(256)
 		}
 
 		return 0;
@@ -540,8 +675,33 @@ namespace gb {
 		//TODO:
 	}
 
+	constexpr u16 BGR555(u8 r8, u8 g8, u8 b8) {
+		return (r8 >> 3) | ((g8 >> 3) << 5) | ((b8 >> 3) << 10);
+	}
+
+	static constexpr u16 palette[5] = {
+		BGR555(34, 58, 50),		//Color 0
+		BGR555(59, 88, 76),		//Color 1
+		BGR555(84, 118, 89),	//Color 2
+		BGR555(136, 148, 87),	//Color 3
+		BGR555(66, 81, 3)		//OFF color
+	};
+
+	template<bool on>
 	_inline_ void pushBlank() {
-		//TODO:
+
+		auto *vpm = oic::System::viewportManager();
+		const auto &wind = vpm->operator[](0);
+
+		vpm->waitSignal(wind);
+
+		u16 *ppu = (u16*)MemoryMapper::ppuStart;
+
+		for (usz i = 0, j = MemoryMapper::ppuLength / 2; i < j; ++i)
+			ppu[i] = palette[on ? 0 : 4];
+
+		vpm->resetSignal(wind);
+		vpm->redraw(wind);
 	}
 
 	_inline_ usz ppuStep(usz ppuCycle, Emulator::Memory &mem) {
@@ -557,8 +717,6 @@ namespace gb {
 
 		//Push populated frame
 		if (mem.get<u8>(ctrl) & 0x80) {
-
-			mem.values[Emulator::FLAGS] &= ~Emulator::LCD_CLEARED;
 
 			u8 lcdc = mem.get<u8>(stat);
 			u8 mode = lcdc & 3;
@@ -621,12 +779,6 @@ namespace gb {
 
 			mem.set<u8>(stat, (lcdc & ~3) | (mode & 3));
 			return 0;
-		}
-
-		//Push blank frame
-		else if (!(mem.values[Emulator::FLAGS] & Emulator::LCD_CLEARED)) {
-			pushBlank();
-			mem.values[Emulator::FLAGS] |= Emulator::LCD_CLEARED;
 		}
 
 		return ppuCycle;

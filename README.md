@@ -127,7 +127,9 @@ All CB instructions are 2 bytes wide and take 8 instructions (or 16 for (HL) as 
 
 param0 = instruction
 
-These instructions are barrel shifts: RLC, RRC, RL, RR, SLA, SRA. They clear the SH flags and set ZC depending on the result (C to the shifted out bit and Z to if it resulted into zero).
+These instructions are barrel shifts: RLC, RRC, RL, RR, SLA, SRA, Swap, SRL. They clear the SH flags and set ZC depending on the result (C to the shifted out bit and Z to if it resulted into zero).
+
+Swap clears the carry flag.
 
 #### Bit manipulation
 

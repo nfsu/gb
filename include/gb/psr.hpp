@@ -31,6 +31,15 @@ namespace gb {
 		__forceinline void setSubtract() { v |= nMask; }
 		__forceinline void clearSubtract() { v &= ~nMask; }
 
+		__forceinline void setHalf() { v |= hMask; }
+		__forceinline void clearHalf() { v &= ~hMask; }
+
+		__forceinline void setCarry() { v |= cMask; }
+		__forceinline void clearCarry() { v &= ~cMask; }
+
+		__forceinline void setZero() { v |= zMask; }
+		__forceinline void clearZero() { v &= ~zMask; }
+
 		template<typename T>
 		__forceinline void setCodes(T a) {
 			zero(a == 0);

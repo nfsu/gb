@@ -18,8 +18,20 @@ namespace gb {
 
 	struct MemoryMapper {
 
-		//Virtual memory located at 0x10000 -> 0x20000
-		static constexpr usz virtualMemory[2] = { 0x10000, 0x10000 }, numberCount = 16;
+		static constexpr usz
+			cpuStart = 0x10000,
+			cpuLength = 0x10000,		//64 KiB of CPU accessible memory
+			mapping = cpuStart,			//Map the cpu memory to our memory space
+			ppuStart = 0x20000,
+			ppuLength = 2 * 160 * 144,	//BGR555 color buffer 160x144
+			ramStart = 0x30000,
+			ramLength = 0x10000,		//64 KiB of RAM banks max
+			romStart = 0x40000,
+			romLength = 0x200000,		//2 MiB of ROM banks max
+			mmuStart = romStart + romLength,
+			mmuLength = 32,				//The MMU's variables, as well as IME
+			memStart = cpuStart,
+			memLength = (mmuStart + mmuLength) - cpuStart;
 
 		template<typename Memory, typename T = void, typename IO = NIOHandler>
 		static _inline_ usz map(Memory *m, u16 a, const T *t = nullptr);
@@ -38,16 +50,15 @@ namespace gb {
 
 		void wait();
 
-		using Memory = emu::Memory16<MemoryMapper, MemoryMapper::numberCount>;
+		using Memory = emu::Memory16<MemoryMapper>;
 		using Stack = emu::Stack<Memory, u16>;
 
-		enum Numbers {
-			FLAGS
+		enum Numbers : usz {
+			FLAGS = MemoryMapper::mmuStart | 31
 		};
 
 		enum Flags {
-			IME = 1,
-			LCD_CLEARED = 2
+			IME = 1
 		};
 
 		Registers r;
@@ -57,37 +68,27 @@ namespace gb {
 	template<typename Memory, typename T, typename IO>
 	_inline_ usz MemoryMapper::map(Memory *m, u16 a, const T *t) {
 
-		t;
+		t; m;
+
+		//TODO: Memory should also include memory not accessible to the emulator
+		//		Memory banks and things like screen RAM should be mapped at 0x10000 -> n so it's not directly accessible in the program
 
 		switch (a >> 12) {
 
-			case 0x0:
-			case 0x1:
-			case 0x2:
-			case 0x3:
+			case 0x0: case 0x1: case 0x2: case 0x3:
+			case 0x4: case 0x5: case 0x6: case 0x7:
 
 				if constexpr (!std::is_same_v<IO, NIOHandler>)
-					return IO::exec<T, Memory, virtualMemory[0]>(m, a, t);
+					return IO::exec<T, Memory, mapping>(m, a, t);
+				else
+					return romStart + a;
 
-				break;
-
-			//Memory::Range{ 0x4000_u16, u16(16_KiB), false, "ROM #1", "Swappable ROM bank", banks[x] }
-			case 0x4:
-			case 0x5:
-			case 0x6:
-			case 0x7:
-
-				if constexpr (!std::is_same_v<IO, NIOHandler>)
-					return IO::exec<T, Memory, virtualMemory[0]>(m, a, t);
-
-				return m->getBankedMemory(0, 0 /* TODO: */, a - 0x4000);
-
-			//Memory::Range{ 0xD000_u16, u16(4_KiB), true, "RAM #1", "Swappable RAM bank", memoryBanks[x] },
-			case 0xD:
-				return m->getBankedMemory(1, 0 /* TODO: */, a - 0xD000);
+			case 0xC: case 0xD:
+				return ramStart + a - 0xC000;
 
 			//Reading from 0x1E000 -> 0x1FE00 is called illegal for the GB(C) by nintendo
-			//	Even though the hardware does it this way, it isn't utilized and implementing it would add an overhead which isn't worth it.
+			//	Even though the hardware does it this way,
+			//	it isn't utilized and implementing it would add an overhead which isn't worth it.
 
 			//case 0xE:
 			//	return virtualMemory[0] | (a ^ (1 << 14));
@@ -97,13 +98,13 @@ namespace gb {
 				//if(a < 0xFE00)
 				//	return virtualMemory[0] | (a ^ (1 << 14));
 				if constexpr(!std::is_same_v<IO, NIOHandler>)
-					IO::exec<T, Memory, virtualMemory[0]>(m, a, t);
+					IO::exec<T, Memory, mapping>(m, a, t);
 
 
 		}
 
 		//Memory located in allocated range
-		return virtualMemory[0] | a;
+		return mapping | a;
 	}
 
 	template<typename T, typename Memory, typename IO>
