@@ -2,7 +2,7 @@
 #include "registers.hpp"
 #include "emu/memory.hpp"
 #include "emu/stack.hpp"
-#include "types/types.hpp"
+#include "gb/addresses.hpp"
 
 namespace gb {
 
@@ -22,14 +22,19 @@ namespace gb {
 			cpuStart = 0x10000,
 			cpuLength = 0x10000,		//64 KiB of CPU accessible memory
 			mapping = cpuStart,			//Map the cpu memory to our memory space
-			ppuStart = 0x20000,
-			ppuLength = 2 * 160 * 144,	//BGR555 color buffer 160x144
-			ramStart = 0x30000,
+
+			ppuStart = cpuStart + cpuLength,
+			ppuLength = specs::width * specs::height * 4,	//160x144 RGBA (4-byte) color buffer
+
+			ramStart = 0x40000,
 			ramLength = 0x10000,		//64 KiB of RAM banks max
-			romStart = 0x40000,
+
+			romStart = ramStart + ramLength,
 			romLength = 0x200000,		//2 MiB of ROM banks max
+
 			mmuStart = romStart + romLength,
 			mmuLength = 32,				//The MMU's variables, as well as IME
+
 			memStart = cpuStart,
 			memLength = (mmuStart + mmuLength) - cpuStart;
 
@@ -109,12 +114,14 @@ namespace gb {
 
 	template<typename T, typename Memory, typename IO>
 	_inline_ T MemoryMapper::read(Memory *m, u16 a) {
-		return *(T*)map(m, a);
+		usz mapped = map(m, a);
+		return *(T*)mapped;
 	}
 
 	template<typename T, typename Memory, typename IO>
 	_inline_ void MemoryMapper::write(Memory *m, u16 a, const T &t) {
-		*(T*)map<Memory, T, IO>(m, a, &t) = t;
+		usz mapped = map<Memory, T, IO>(m, a, &t);
+		*(T*)mapped = t;
 	}
 
 }

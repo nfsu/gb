@@ -98,7 +98,7 @@ namespace gb {
 					if(g & 16)		//Joypad
 						oic::System::log()->println("Joypad");
 
-					m->set(addr, u8(u & ~g));
+					m->getMemory<u8>(mapping | addr) = u8(u & ~g);
 
 				}
 
@@ -106,7 +106,7 @@ namespace gb {
 
 		}
 		
-		return addr;
+		return mapping | addr;
 	}
 
 	//CPU/GPU emulation
@@ -119,12 +119,12 @@ namespace gb {
 
 	void Emulator::wait() {
 
-		usz cycles{}, ppuCycle{};
+		usz ppuCycle{};
 
 		pushBlank<false>();
 
 		while (true) {
-			cycles += cpuStep(r, memory);
+			ppuCycle += cpuStep(r, memory);
 			ppuCycle = ppuStep(ppuCycle, memory);
 		}
 	}
@@ -161,12 +161,12 @@ namespace gb {
 
 	static _inline_ usz halt() {
 		//TODO: HALT
-		return 16;
+		return 1;
 	}
 
 	static _inline_ usz stop() {
 		//TODO: Stop
-		return 4;
+		return 1;
 	}
 	
 	template<bool enable, usz flag>
@@ -215,7 +215,7 @@ namespace gb {
 	template<u8 c> static _inline_ usz lds(Registers &r, Emulator::Memory &mem) {
 		shortReg<c>(r) = mem.get<u16>(r.pc);
 		r.pc += 2;
-		return 12;
+		return 3;
 	}
 
 	//All alu operations (ADD/ADC/SUB/SUBC/AND/XOR/OR/CP)
@@ -248,7 +248,7 @@ namespace gb {
 		else
 			emu::sub(f, a, b);
 
-		return 4;
+		return 1;
 	}
 
 	template<u8 c> static _inline_ usz aluOp(Registers &r, Emulator::Memory &mem) {
@@ -275,7 +275,7 @@ namespace gb {
 	template<u8 c> static _inline_ usz rst(Registers &r, Emulator::Memory &m) {
 		Emulator::Stack::push(m, r.sp, r.pc);
 		r.pc = u16(c - 0xC0) | (c & 0x8);
-		return 16;
+		return 4;
 	}
 
 	//Condtional calls
@@ -304,12 +304,12 @@ namespace gb {
 			if (!cond<check>(r.f))
 				if constexpr (inRegion<jp, 1, 3>) {			//2-width instructions
 					r.pc += 2;
-					return 12;
+					return 3;
 				} else if constexpr((jp & 3) == 0) {		//1-width instructions
 					++r.pc;
-					return 8;
+					return 2;
 				} else
-					return 8;
+					return 2;
 
 		if constexpr ((jp & 3) == 3) {						//RET
 
@@ -318,7 +318,7 @@ namespace gb {
 			if constexpr ((jp & 8) != 0)
 				setFlag<true, Emulator::IME>(m);
 
-			return check == 0 ? 16 : 20;
+			return check == 0 ? 4 : 5;
 
 		} else if constexpr (inRegion<jp & 3, 1, 3>) {		//JP/CALL
 
@@ -330,12 +330,12 @@ namespace gb {
 			else
 				r.pc = m.get<u16>(r.pc);
 
-			return 8 + jp * 8;
+			return 2 + jp * 2;
 
 		} else {											//JR
 			r.pc += u16(i16(m.get<i8>(r.pc)));
 			++r.pc;
-			return 12;
+			return 3;
 		}
 	}
 
@@ -396,7 +396,7 @@ namespace gb {
 
 		r.f.carryHalf(v & 0x10);
 		r.f.zero(v == 0);
-		return r1 == 6 ? 12 : 4;
+		return r1 == 6 ? 3 : 1;
 	}
 
 	//Short register functions
@@ -411,7 +411,7 @@ namespace gb {
 	template<u8 c> static _inline_ usz incs(Registers &r) {
 		static constexpr u16 add = c & 8 ? u16_MAX : 1;
 		shortReg<c>(r) += add;
-		return 8;
+		return 2;
 	}
 
 	//Every case runs through this
@@ -508,7 +508,7 @@ namespace gb {
 		else
 			set<cr, u8>(r, mem, get<cr, u8>(r, mem) | (1 << p));
 
-		return cr == 6 ? 16 : 8;
+		return cr == 6 ? 4 : 2;
 	}
 
 	template<u8 c> static _inline_ usz op256(Registers &r, Emulator::Memory &mem) {
@@ -518,7 +518,7 @@ namespace gb {
 		static constexpr u8 code = c & 0x07, hi = c & 0xF;
 
 		if constexpr (c == NOP)
-			return 4;
+			return 1;
 
 		else if constexpr (c == STOP)
 			return stop();
@@ -528,9 +528,8 @@ namespace gb {
 
 		//DI/EI; disable/enable interrupts
 		else if constexpr (c == DI || c == EI) {
-			usz cycles = 4 + cpuStep(r, mem);
 			setFlag<c == EI, Emulator::IME>(mem);
-			return cycles;
+			return 1;
 		}
 
 		//RET, JP, JR and CALL
@@ -546,7 +545,14 @@ namespace gb {
 			if constexpr (hi == 1)
 				return lds<c>(r, mem);
 
-			//TODO: hi == 0x9 (ADD HL, r16)
+			else if constexpr (hi == 0x9) {
+				u16 &a = shortReg<c>(r), hl = r.hl;
+				r.f.clearSubtract();
+				r.hl += a;
+				r.f.carryHalf(r.hl & 0x10);
+				r.f.carry(r.hl < hl);
+				return 2;
+			}
 
 			else if constexpr (code == 3)
 				return incs<c>(r);
@@ -557,7 +563,48 @@ namespace gb {
 			else if constexpr (code == 2 || code == 6)
 				return ldi<c>(r, mem);
 
-			//TODO: DAA, SCF, CPL, CCF
+			//SCF, CCF
+			else if constexpr (c == 0x37 || c == 0x3F) {
+
+				r.f.clearSubtract();
+				r.f.clearHalf();
+
+				if constexpr (c == 0x37)
+					r.f.setCarry();
+				else
+					r.f.carry(!r.f.carry());
+
+				return 1;
+			}
+
+			//CPL
+			else if constexpr (c == 0x2F) {
+				r.f.setSubtract();
+				r.f.setHalf();
+				r.a = ~r.a;
+				return 1;
+			}
+
+			//DAA
+			else if constexpr (c == 0x27) {
+
+				u8 i = 0, j = r.a;
+				r.f.clearCarry();
+
+				if (r.f.carryHalf() || (!r.f.subtract() && (j & 0xF) > 0x9))
+					i |= 0x6;
+
+				if (r.f.carry() || (!r.f.subtract() && j > 0x99)) {
+					i |= 0x60;
+					r.f.setCarry();
+				}
+
+				r.a = j += u8(-i8(i));
+				r.f.clearHalf();
+				r.f.zero(j == 0);
+				return 1;
+			}
+
 			//TODO: LD (a16), SP
 
 			else
@@ -593,7 +640,7 @@ namespace gb {
 			else
 				r.a = mem.get<u8>(addr);
 
-			return 4;
+			return 1;
 		}
 
 		//CB instructions (mask, reset, set, rlc/rrc/rl/rr/sla/sra/swap/srl)
@@ -619,7 +666,7 @@ namespace gb {
 			if constexpr (reg == 3)
 				r.fa = (r.f.v << 8) | r.a;	//Flip bytes, since AF register is FA for us
 
-			return hi == 1 ? 12 : 16;
+			return hi == 1 ? 3 : 4;
 		}
 
 		//TODO: ADD SP, r8
@@ -667,68 +714,110 @@ namespace gb {
 		return 0;
 	}
 
-	_inline_ void pushLine(Emulator::Memory &) {
-		//TODO:
+	//Palette
+
+	constexpr u32 rgb(u8 r8, u8 g8, u8 b8) {
+		return r8 | (g8 << 8) | (b8 << 16);
 	}
 
-	_inline_ void pushScreen() {
-		//TODO:
-	}
-
-	constexpr u16 BGR555(u8 r8, u8 g8, u8 b8) {
-		return (r8 >> 3) | ((g8 >> 3) << 5) | ((b8 >> 3) << 10);
-	}
-
-	static constexpr u16 palette[5] = {
-		BGR555(34, 58, 50),		//Color 0
-		BGR555(59, 88, 76),		//Color 1
-		BGR555(84, 118, 89),	//Color 2
-		BGR555(136, 148, 87),	//Color 3
-		BGR555(66, 81, 3)		//OFF color
+	static constexpr u32 palette[5] = {
+		rgb(136, 148, 87),	//Color 0
+		rgb(84, 118, 89),	//Color 1
+		rgb(59, 88, 76),	//Color 2
+		rgb(34, 58, 50),	//Color 3
+		rgb(66, 81, 3)		//OFF color
 	};
 
+	//Copy the immediate buffer to the screen
+	_inline_ void pushScreen() {
+		auto *vpm = oic::System::viewportManager();
+		const auto &wind = vpm->operator[](0);
+		vpm->redraw(wind);
+
+		Sleep(1000);
+	}
+
+	//Render a line
+	_inline_ void pushLine(Emulator::Memory &mem) {
+
+		usz
+			ly = mem.get<u8>(io::ly),
+			wy = mem.get<u8>(io::wy),
+			wx = mem.get<u8>(io::wx),
+			y = (ly + mem.get<u8>(io::scy)) & 0xFF,
+			scx = mem.get<u8>(io::scx),
+			offy = y << 5,
+			ctrl = mem.get<u8>(io::ctrl);
+
+		wy; wx;
+
+		u32 *ppu = (u32*)MemoryMapper::ppuStart;
+		ppu += ly * specs::width;
+
+		u16 offset = 0x8000;
+
+		if (ctrl & (io::enableBg & 0xFF))
+			offset += ctrl & (io::bgTileAddr & 0xFF) ? 0x800 : 0x000;
+
+		//TODO: BG Map, Window map
+
+		printf("%zu %zu %zu %zu\n", ly, ctrl, wy, wx);
+
+		const u16 *tileset = (u16*)(MemoryMapper::mapping | offset);
+
+		for (usz i = 0; i < specs::width; ++i) {
+
+			usz x = i + scx, tx = (x >> 3) & 0x1F;
+			u16 tile = tileset[tx + offy];
+
+			tile >>= 2 * (7 - (x & 7));
+			tile &= 3;
+
+			//TODO: Remap using bgp
+
+			ppu[i] = palette[tile];
+
+		}
+
+		mem.set<u8>(io::ly, u8(ly + 1));
+	}
+
+	//Push blank screen to the immediate buffer
+	//Then push the immediate buffer to the screen buffer
 	template<bool on>
 	_inline_ void pushBlank() {
 
-		auto *vpm = oic::System::viewportManager();
-		const auto &wind = vpm->operator[](0);
+		u32 *ppu = (u32*)MemoryMapper::ppuStart;
 
-		vpm->waitSignal(wind);
-
-		u16 *ppu = (u16*)MemoryMapper::ppuStart;
-
-		for (usz i = 0, j = MemoryMapper::ppuLength / 2; i < j; ++i)
+		for (usz i = 0, j = MemoryMapper::ppuLength / 4; i < j; ++i)
 			ppu[i] = palette[on ? 0 : 4];
 
-		vpm->resetSignal(wind);
-		vpm->redraw(wind);
+		pushScreen();
 	}
 
 	_inline_ usz ppuStep(usz ppuCycle, Emulator::Memory &mem) {
 
-		static constexpr u16 ctrl = 0xFF40, stat = 0xFF41, ly = 0xFF44;
-
 		enum Modes {
-			HBLANK = 0,			HBLANK_INTERVAL = 204,
-			VBLANK = 1,			VBLANK_INTERVAL = 456,
-			OAM = 2,			OAM_INTERVAL = 80,
-			VRAM = 3,			VRAM_INTERVAL = 172
+			HBLANK = 0,			HBLANK_INTERVAL = 51,
+			VBLANK = 1,			VBLANK_INTERVAL = 114,
+			OAM = 2,			OAM_INTERVAL = 20,
+			VRAM = 3,			VRAM_INTERVAL = 43
 		};
 
 		//Push populated frame
-		if (mem.get<u8>(ctrl) & 0x80) {
+		if (mem.get<u8>(io::ctrl) & 0x80) {
 
-			u8 lcdc = mem.get<u8>(stat);
+			u8 lcdc = mem.get<u8>(io::stat);
 			u8 mode = lcdc & 3;
 
 			switch (mode) {
 
 				case HBLANK:
 
-					if (ppuCycle == HBLANK_INTERVAL) {
+					if (ppuCycle >= HBLANK_INTERVAL) {
 
 						//Push to screen and restart vblank
-						if (mem.increment<u8>(ly) == 143) {
+						if (mem.get<u8>(io::ly) == specs::height) {
 							pushScreen();
 							goto incrReset;
 						}
@@ -742,10 +831,10 @@ namespace gb {
 
 				case VBLANK:
 
-					if (ppuCycle == VBLANK_INTERVAL) {
+					if (ppuCycle >= VBLANK_INTERVAL) {
 
-						if (mem.increment<u8>(ly) > 153) {
-							mem.set<u8>(ly, 0);
+						if (mem.increment<u8>(io::ly) > 153) {
+							mem.set<u8>(io::ly, 0);
 							goto incrReset;
 						}
 
@@ -756,14 +845,14 @@ namespace gb {
 
 				case OAM:
 
-					if (ppuCycle == OAM_INTERVAL)
+					if (ppuCycle >= OAM_INTERVAL)
 						goto incrReset;
 					
 					break;
 
 				case VRAM:
 
-					if (ppuCycle == VRAM_INTERVAL) {
+					if (ppuCycle >= VRAM_INTERVAL) {
 						pushLine(mem);
 						goto incrReset;
 					}
@@ -777,7 +866,7 @@ namespace gb {
 
 		reset:
 
-			mem.set<u8>(stat, (lcdc & ~3) | (mode & 3));
+			mem.set<u8>(io::stat, (lcdc & ~3) | (mode & 3));
 			return 0;
 		}
 
