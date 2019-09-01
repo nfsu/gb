@@ -77,8 +77,8 @@ namespace gb {
 		};
 
 		enum Interrupt {
-			IF = 0xFF0F,
-			IE = 0xFFFF
+			IF = 0xFF0F,	//Process an interrupt
+			IE = 0xFFFF		//Interrupt enable flags
 		};
 	}
 

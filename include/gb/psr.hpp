@@ -47,6 +47,7 @@ namespace gb {
 
 		template<bool sub, typename T>
 		__forceinline void setALU(T a, T, T c) {
+
 			carryHalf(c & 0x10);
 
 			if constexpr (sub) {

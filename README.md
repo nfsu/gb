@@ -14,14 +14,6 @@ The BC, DE, HL registers are accessible as 16-bit registers through some instruc
 
 (r) is for taking the address from the register and performing the operation on that. LD (HL), A stores A at the address pointed to by HL.
 
-### Instruction registers
-
-Commonly, registers are addressed through their id. Opcodes can include this id in their format. With general registers, it addresses like B, C, D, E, H, L, (HL), A. I call this a "cr" (common register).
-
-To make this encoding match up with the registers, I swapped AF in memory to behind H, L. And I swapped F with A to make sure the common id lined up. If (HL) is used, it has to read the memory at the address mentioned in HL. This means you can't index the registers directly with the cr id, because that would give access to the F register (not directly accessible). 
-
-For speeding up the flow of implementation; cr 8 is defined as (pc). Even though this is not a valid ASM instruction. It can only be used for reading (as ROM is not writable) and it automatically increases PC by the bytes read.
-
 ### Flag register (F)
 
 Zero (Z) is stored in 0x80. This is set if the last operation was non-zero.
@@ -83,73 +75,7 @@ The last byte is the flags for enabling interrupts.
 
 ## Instruction types
 
-### LD
-
-LD loads one value into another. This can be the register or the memory pointed to by a register. These can be 16-bit or 8-bit. Some instructions include this value as an immediate at (pc). Some instructions allow incrementing or decrementing the register after it is read from. LDH uses address 0xFF00 | im8.
-
-## Instruction formats
-
-These formats don't affect the F register unless specified.
-
-### LD cr0, cr1
-
-Ranges from 0x40 until 0x80.
-
-cr0 = (i >> 3) & 7
-cr1 = i & 7
-
-If cr and cr are the same, it's basically a NOP, since it loads itself into itself. If cr == (HR), it is a HALT instruction.
-
-### Special instructions
-
-#### TODO: Halt
-
-#### TODO: Stop
-
-#### NOP
-
-No operation, can be used for timing purposes (4 cycles per operation).
-
-#### DI/EI
-
-Disable/enable interrupts. This is an internal flag that the CPU has. If this is enabled, the CPU has to handle interrupts.
-
-### CB
-
-The prefix "CB" has 256 other instructions; all of which are extremely easily implemented. The params are the following:
-
-param0 = (i >> 3) & 7
-cr = i & 7
-
-All CB instructions are 2 bytes wide and take 8 instructions (or 16 for (HL) as param1).
-
-#### Barrel shifts (<0x40)
-
-param0 = instruction
-
-These instructions are barrel shifts: RLC, RRC, RL, RR, SLA, SRA, Swap, SRL. They clear the SH flags and set ZC depending on the result (C to the shifted out bit and Z to if it resulted into zero).
-
-Swap clears the carry flag.
-
-#### Bit manipulation
-
-param0 = bit
-
-##### Bit masks (<0x80)
-
-[cr] & (1 << bit)
-
-The instructions are bit masks. They set the Z flag depending on if the bit is checked or not (Z = not checked). H is set to 1 and S is cleared.
-
-##### Reset bit (<0xC0)
-
-[cr] &= ~(1 << bit)
-
-##### Set bit
-
-[cr] |= 1 << bit
-
-
+See [docs/instructions.md](docs/instructions.md).
 
 ## Special thanks
 
@@ -169,8 +95,12 @@ Tetris assembly code.
 
 ### Gbdev discord server
 
-The following people have helped me by giving advice on how to approach certain things such as the PPU:
+The following people have helped me by giving advice (in no particular order) on how to approach certain things such as the PPU:
 
 PinoBatch
 Max (ded)
 NieDzejkob
+GameFuzion
+garrettgu10
+eightlittlebits
+gekkio

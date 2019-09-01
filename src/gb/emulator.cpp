@@ -3,6 +3,8 @@
 #include "system/viewport_manager.hpp"
 #undef min
 
+#include <sstream>
+
 namespace gb {
 
 	//Memory emulation
@@ -80,8 +82,10 @@ namespace gb {
 
 				if (m->getMemory<u8>(Emulator::FLAGS) & Emulator::IME) {
 
-					const u8 u = u8(*t);
-					const u8 f = *(const u8*)(mapping | 0xFFFF), g = u & f;
+					oic::System::log()->println("Interrupt ", usz(*t));
+
+ 					const u8 u = u8(*t);
+					const u8 f = *(const u8*)(mapping | io::IE), g = u & f;
 
 					if(g & 1)		//V-Blank
 						oic::System::log()->println("V-Blank");
@@ -98,7 +102,7 @@ namespace gb {
 					if(g & 16)		//Joypad
 						oic::System::log()->println("Joypad");
 
-					m->getMemory<u8>(mapping | addr) = u8(u & ~g);
+					m->set(io::IF, u8(u & ~g));
 
 				}
 
@@ -129,11 +133,33 @@ namespace gb {
 		}
 	}
 
+	//Debugging
+
+	#define __PRINT_DEBUG__
+
+	#ifdef __PRINT_DEBUG__
+		template<typename ...args>
+		static _inline_ void operation(const args &...arg) {
+			//((arg), ...);
+			oic::System::log()->println(arg...);
+		}
+	#else
+		template<typename ...args>
+		static _inline_ void operation(const args &...) {}
+	#endif
+
+	const char *crName[] = { "b", "c", "d", "e", "h", "l", "(hl)", "a" };
+	const char *addrRegName[] = { "bc", "de", "hl+", "hl-" };
+	const char *shortRegName[] = { "bc", "de", "hl", "sp" };
+	const char *shortRegNameAf[] = { "bc", "de", "hl", "af" };
+	const char *aluName[] = { "add", "adc", "sub", "sbc", "and", "xor", "or", "cp" };
+	const char *condName[] = { "nz", "z", "nc", "c", "" };
+
 	//Function for setting a cr
 
 	template<u8 cr, typename T> static _inline_ void set(Registers &r, Emulator::Memory &mem, const T &t) {
 		mem;
-		if constexpr (cr != 6) r.regs[cr] = t;
+		if constexpr (cr != 6) r.regs[Registers::mapping[cr]] = t;
 		else mem.set(r.hl, t);
 	}
 
@@ -150,7 +176,7 @@ namespace gb {
 			const T t = mem.get<T>(r.pc);
 			r.pc += sizeof(T);
 			return t;
-		} else return r.regs[cr];
+		} else return r.regs[Registers::mapping[cr]];
 	}
 
 	template<u8 c, typename T> static _inline_ T getc(Registers &r, Emulator::Memory &mem) {
@@ -161,11 +187,13 @@ namespace gb {
 
 	static _inline_ usz halt() {
 		//TODO: HALT
+		operation("halt");
 		return 1;
 	}
 
 	static _inline_ usz stop() {
 		//TODO: Stop
+		operation("stop");
 		return 1;
 	}
 	
@@ -178,14 +206,16 @@ namespace gb {
 	}
 
 	//LD operations
-		//LD cr, cr
+
+	//LD cr, cr
 
 	template<u8 c> static _inline_ usz ld(Registers &r, Emulator::Memory &mem) {
+		operation("ld ", crName[(c >> 3) & 7], ",", crName[c & 7]);
 		setc<c, u8>(r, mem, getc<c, u8>(r, mem));
-		return (c & 0x7) == 6 || ((c >> 3) & 7) == 6 ? 8 : 4;
+		return (c & 0x7) == 6 || ((c >> 3) & 7) == 6 ? 2 : 1;
 	}
 
-		//LD cr, (pc)
+	//LD cr, (pc)
 
 	template<u8 s> static _inline_ u16 addrFromReg(Registers &r) {
 		if constexpr (s < 2)
@@ -200,19 +230,33 @@ namespace gb {
 	}
 
 	template<u8 c> static _inline_ usz ldi(Registers &r, Emulator::Memory &mem) {
-		if constexpr ((c & 7) == 6)
-			setc<c, u8>(r, mem, get<8, u8>(r, mem));
-		else if constexpr ((c & 0xF) == 2)
-			mem.set<u8>(addrFromReg<u8(c >> 4)>(r), r.a);
-		else
-			r.a = mem.get<u8>(addrFromReg<u8(c >> 4)>(r));
 
-		return c == 0x36 ? 12 : 8;
+		//LD cr, #8
+		if constexpr ((c & 7) == 6) {
+			u8 v = get<8, u8>(r, mem);
+			operation("ld ", crName[(c >> 3) & 7], ",", u32(v));
+			setc<c, u8>(r, mem, v);
+		}
+		
+		//LD (nn), A
+		else if constexpr ((c & 0xF) == 2) {
+			operation("ld (", addrRegName[c >> 4], "),a");
+			mem.set<u8>(addrFromReg<u8(c >> 4)>(r), r.a);
+		}
+		
+		//LD A, (nn)
+		else {
+			operation("ld a,(", addrRegName[c >> 4], ")");
+			r.a = mem.get<u8>(addrFromReg<u8(c >> 4)>(r));
+		}
+
+		return c == 0x36 ? 3 : 2;
 	}
 
-		//LD A, (a16) / LD (a16), A
+	//LD A, (a16) / LD (a16), A
 
 	template<u8 c> static _inline_ usz lds(Registers &r, Emulator::Memory &mem) {
+		operation("ld ", shortRegName[c / 16], ",", mem.get<u16>(r.pc));
 		shortReg<c>(r) = mem.get<u16>(r.pc);
 		r.pc += 2;
 		return 3;
@@ -256,9 +300,11 @@ namespace gb {
 		//(HL) or (pc)
 		if constexpr ((c & 7) == 6) {
 
-			if constexpr (c < 0xC0)
+			if constexpr (c < 0xC0) {
+				operation(aluName[(c >> 3) & 7], " a,(hl)");
 				return performAlu<c>(r.f, r.a, mem.get<u8>(r.hl));
-			else {
+			} else {
+				operation(aluName[(c >> 3) & 7], " a,", u32(mem.get<u8>(r.pc)));
 				usz v = performAlu<c>(r.f, r.a, mem.get<u8>(r.pc));
 				++r.pc;
 				return v;
@@ -266,22 +312,25 @@ namespace gb {
 		}
 		
 		//Reg ALU
-		else
+		else {
+			operation(aluName[(c >> 3) & 7], " a,", crName[c & 7]);
 			return performAlu<c>(r.f, r.a, r.regs[c & 7]);
+		}
 	}
 
 	//RST x instruction
 
 	template<u8 c> static _inline_ usz rst(Registers &r, Emulator::Memory &m) {
+		operation("rst ", (c & 0x30) | (c & 0x8));
 		Emulator::Stack::push(m, r.sp, r.pc);
-		r.pc = u16(c - 0xC0) | (c & 0x8);
+		r.pc = (c & 0x30) | (c & 0x8);
 		return 4;
 	}
 
 	//Condtional calls
 	template<u8 c> static _inline_ bool cond(PSR &f) {
 
-		static constexpr u8 condition = (c / 8) % 4;
+		static constexpr u8 condition = (c >> 3) & 3;
 
 		if constexpr (condition == 0)
 			return !f.zero();
@@ -300,9 +349,24 @@ namespace gb {
 
 	template<u8 jp, u8 check> static _inline_ usz branch(Registers &r, Emulator::Memory &m) {
 		
+		if constexpr ((jp & 3) == 3)
+			operation("ret", jp & 8 ? "i" : " ", check != 0 ? condName[(check >> 3) & 3] : "");
+		else if constexpr (inRegion<jp & 3, 1, 3>)
+			operation((jp & 3) == 1 ? "jp " : "call ",
+				check != 0 ? condName[(check >> 3) & 3] : "",
+				check != 0 ? "," : "",
+				jp & 4 ? "(hl)" : oic::Log::concat((void*)m.get<u16>(r.pc))
+			);
+		else if constexpr ((jp & 3) == 0)
+			operation("jr ",
+				check != 0 ? condName[(check >> 3) & 3] : "",
+				check != 0 ? "," : "",
+				i32(m.get<i8>(r.pc))
+			);
+
 		if constexpr (check != 0)
 			if (!cond<check>(r.f))
-				if constexpr (inRegion<jp, 1, 3>) {			//2-width instructions
+				if constexpr (inRegion<jp & 3, 1, 3>) {			//2-width instructions
 					r.pc += 2;
 					return 3;
 				} else if constexpr((jp & 3) == 0) {		//1-width instructions
@@ -323,7 +387,7 @@ namespace gb {
 		} else if constexpr (inRegion<jp & 3, 1, 3>) {		//JP/CALL
 
 			if constexpr ((jp & 3) == 2)					//CALL
-				Emulator::Stack::push(m, r.sp, r.pc);
+				Emulator::Stack::push(m, r.sp, r.pc + 2);
 
 			if constexpr ((jp & 4) != 0)
 				r.pc = m.get<u16>(r.hl);
@@ -362,7 +426,7 @@ namespace gb {
 			return branch<2, c>(r, m);
 
 		else if constexpr (c == 0xE9)
-			return branch<4, 0>(r, m);
+			return branch<5, 0>(r, m);
 
 		else if constexpr (c == 0xC9)
 			return branch<7, 0>(r, m);		//RET
@@ -379,17 +443,20 @@ namespace gb {
 	template<u8 c> static _inline_ usz inc(Registers &r, Emulator::Memory &mem) {
 
 		static constexpr u8 add = c & 1 ? u8_MAX : 1;
+		static constexpr u8 r1 = (c >> 3) & 7;
 
-		if constexpr ((c & 1) == 0)
+		if constexpr ((c & 1) == 0) {
+			operation("inc ", crName[r1]);
 			r.f.clearSubtract();
-		else
+		} else {
+			operation("dec ", crName[r1]);
 			r.f.setSubtract();
+		}
 
 		u8 v;
-		static constexpr u8 r1 = c / 8;
 
 		if constexpr (r1 != 6)
-			v = r.regs[r1] += add;
+			v = r.regs[Registers::mapping[r1]] += add;
 
 		else
 			v = mem.set(r.hl, u8(mem.get<u8>(r.hl) + add));
@@ -402,14 +469,15 @@ namespace gb {
 	//Short register functions
 
 	template<u8 c> static _inline_ u16 &shortReg(Registers &r) {
-		if constexpr (c / 16 < 3)
-			return r.lregs[c / 16];
+		if constexpr (((c >> 4) & 3) < 3)
+			return r.lregs[c >> 4];
 		else
 			return r.sp;
 	}
 
 	template<u8 c> static _inline_ usz incs(Registers &r) {
 		static constexpr u16 add = c & 8 ? u16_MAX : 1;
+		operation(c & 8 ? "dec " : "inc ", shortRegName[(c >> 4) & 3]);
 		shortReg<c>(r) += add;
 		return 2;
 	}
@@ -517,8 +585,10 @@ namespace gb {
 
 		static constexpr u8 code = c & 0x07, hi = c & 0xF;
 
-		if constexpr (c == NOP)
+		if constexpr (c == NOP) {
+			operation("nop");
 			return 1;
+		}
 
 		else if constexpr (c == STOP)
 			return stop();
@@ -528,9 +598,18 @@ namespace gb {
 
 		//DI/EI; disable/enable interrupts
 		else if constexpr (c == DI || c == EI) {
+			operation(c == DI ? "di" : "ei");
 			setFlag<c == EI, Emulator::IME>(mem);
 			return 1;
 		}
+
+		//LD (a16), SP instruction; TODO:
+		else if constexpr (c == 0x8) {
+			mem.set(mem.get<u16>(r.pc), r.sp);
+			r.pc += 2;
+			return 5;
+		}
+
 
 		//RET, JP, JR and CALL
 		else if constexpr (isJump<c, code, hi>)
@@ -546,6 +625,7 @@ namespace gb {
 				return lds<c>(r, mem);
 
 			else if constexpr (hi == 0x9) {
+				operation("add hl,", shortRegName[(c >> 4) & 3]);
 				u16 &a = shortReg<c>(r), hl = r.hl;
 				r.f.clearSubtract();
 				r.hl += a;
@@ -566,6 +646,8 @@ namespace gb {
 			//SCF, CCF
 			else if constexpr (c == 0x37 || c == 0x3F) {
 
+				operation(c == 0x37 ? "scf" : "ccf");
+
 				r.f.clearSubtract();
 				r.f.clearHalf();
 
@@ -579,6 +661,7 @@ namespace gb {
 
 			//CPL
 			else if constexpr (c == 0x2F) {
+				operation("cpl");
 				r.f.setSubtract();
 				r.f.setHalf();
 				r.a = ~r.a;
@@ -587,6 +670,8 @@ namespace gb {
 
 			//DAA
 			else if constexpr (c == 0x27) {
+
+				operation("daa");
 
 				u8 i = 0, j = r.a;
 				r.f.clearCarry();
@@ -625,12 +710,23 @@ namespace gb {
 
 			u16 addr;
 
+			//TODO:
+
 			if constexpr (hi == 0x0) {
+				operation("ldh ", 
+						  c < 0xF0 ? oic::Log::concat((u16)mem.get<u8>(r.pc)) : "a", ",",
+						  c >= 0xF0 ? oic::Log::concat((u16)mem.get<u8>(r.pc)) : "a"
+				);
 				addr = 0xFF00 | mem.get<u8>(r.pc);
 				++r.pc;
-			} else if constexpr (hi == 0x2)
+			} else if constexpr (hi == 0x2) {
+				operation("ld ", c < 0xF0 ? "(c)," : "a,", c >= 0xF0 ? "(c)" : "a");
 				addr = 0xFF00 | r.c;
-			else {
+			} else {
+				operation("ld ", 
+						  c < 0xF0 ? oic::Log::concat(mem.get<u16>(r.pc)) : "a", ",",
+						  c >= 0xF0 ? oic::Log::concat(mem.get<u16>(r.pc)) : "a"
+				);
 				addr = mem.get<u16>(r.pc);
 				r.pc += 2;
 			}
@@ -652,9 +748,7 @@ namespace gb {
 
 			static constexpr u8 reg = (c - 0xC0) >> 4;
 
-			//Flip bytes for pushing, since AF register is FA for us
-			if constexpr (hi != 1)
-				r.fa = (r.f.v << 8) | r.a;
+			operation(hi == 1 ? "pop " : "push ", shortRegNameAf[reg]);
 
 			//Push to or pop from stack
 			if constexpr (hi == 1)
@@ -662,11 +756,17 @@ namespace gb {
 			else
 				Emulator::Stack::push(mem, r.sp, r.lregs[reg]);
 
-			//Flip bytes for af instruction, since AF register is FA for us
-			if constexpr (reg == 3)
-				r.fa = (r.f.v << 8) | r.a;	//Flip bytes, since AF register is FA for us
-
 			return hi == 1 ? 3 : 4;
+		}
+		
+		//LD HL, SP+a8
+		else if constexpr (c == 0xF8) {
+
+			operation("ld hl, sp+", u16(mem.get<u8>(r.pc)));
+			r.hl = emu::add(r.f, r.sp, u16(mem.get<u8>(r.pc)));
+			r.f.clearZero();
+			++r.pc;
+			return 3;
 		}
 
 		//TODO: ADD SP, r8
@@ -705,6 +805,7 @@ namespace gb {
 	_inline_ usz cpuStep(Registers &r, Emulator::Memory &mem) {
 
 		u8 opCode = mem.get<u8>(r.pc);
+		printf("%p %03u\t", (void*)r.pc, opCode);
 		++r.pc;
 
 		switch (opCode) {
@@ -761,7 +862,7 @@ namespace gb {
 
 		//TODO: BG Map, Window map
 
-		printf("%zu %zu %zu %zu\n", ly, ctrl, wy, wx);
+		oic::System::log()->println(ly, " ", ctrl, " ", wy, " ", wy);
 
 		const u16 *tileset = (u16*)(MemoryMapper::mapping | offset);
 
@@ -819,6 +920,7 @@ namespace gb {
 						//Push to screen and restart vblank
 						if (mem.get<u8>(io::ly) == specs::height) {
 							pushScreen();
+							mem.getRef<u8>(io::IF) |= 1;		//Signal vblank
 							goto incrReset;
 						}
 
