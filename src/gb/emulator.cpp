@@ -49,7 +49,6 @@ namespace gb {
 
 		return List<Range>{
 			Range{ MemoryMapper::cpuStart, MemoryMapper::cpuLength, true, "CPU", "CPU Memory", {}, false },
-			Range{ MemoryMapper::ppuStart, MemoryMapper::ppuLength, true, "PPU", "Pixel Processing Unit", {} },
 			Range{ MemoryMapper::ramStart, ramBankSize * ramBanks, true, "RAM #n", "RAM Banks", {} },
 			Range{ MemoryMapper::romStart, romBankSize * romBanks, false, "ROM #n", "ROM Banks", rom },
 			Range{ MemoryMapper::mmuStart, MemoryMapper::mmuLength, true, "MMU", "Memory Unit additional variables", {} }
@@ -82,25 +81,25 @@ namespace gb {
 
 				if (m->getMemory<u8>(Emulator::FLAGS) & Emulator::IME) {
 
-					oic::System::log()->println("Interrupt ", usz(*t));
+					oic::System::log()->debug("Interrupt ", usz(*t));
 
  					const u8 u = u8(*t);
 					const u8 f = *(const u8*)(mapping | io::IE), g = u & f;
 
 					if(g & 1)		//V-Blank
-						oic::System::log()->println("V-Blank");
+						oic::System::log()->debug("V-Blank");
 
 					if(g & 2)		//LCD STAT
-						oic::System::log()->println("LCD STAT");
+						oic::System::log()->debug("LCD STAT");
 
 					if(g & 4)		//Timer
-						oic::System::log()->println("Timer");
+						oic::System::log()->debug("Timer");
 
 					if(g & 8)		//Serial
-						oic::System::log()->println("Serial");
+						oic::System::log()->debug("Serial");
 
 					if(g & 16)		//Joypad
-						oic::System::log()->println("Joypad");
+						oic::System::log()->debug("Joypad");
 
 					m->set(io::IF, u8(u & ~g));
 
@@ -116,20 +115,43 @@ namespace gb {
 	//CPU/GPU emulation
 
 	_inline_ usz cpuStep(Registers &r, Emulator::Memory &mem);
-	_inline_ usz ppuStep(usz ppuCycle, Emulator::Memory &mem);
+	_inline_ usz ppuStep(usz ppuCycle, Emulator::Memory &mem, bool &pushScreen, u32 *ppu);
 
 	template<bool on>
-	_inline_ void pushBlank();
+	_inline_ void pushBlank(u32 *ppu, u32 *ppuEnd);
 
 	void Emulator::wait() {
 
-		usz ppuCycle{};
+		if (!output.dataSize())
+			output = oic::Grid2D<u32>(Vec2usz(specs::height, specs::width));
 
-		pushBlank<false>();
+		usz ppuCycle{};
+		bool pushScreen{};
+
+		pushBlank<false>(output.begin(), output.end());
 
 		while (true) {
 			ppuCycle += cpuStep(r, memory);
-			ppuCycle = ppuStep(ppuCycle, memory);
+			ppuCycle = ppuStep(ppuCycle, memory, pushScreen, output.begin());
+		}
+	}
+
+	void Emulator::doFrame(const oic::Grid2D<u32> &buffer) {
+
+		if(buffer.size()[0] == specs::height && buffer.size()[1] == specs::width)
+			output = buffer;
+
+		if (!output.dataSize())
+			output = oic::Grid2D<u32>(Vec2usz(specs::height, specs::width));
+
+		usz ppuCycle{};
+		bool pushScreen{};
+
+		pushBlank<false>(output.begin(), output.end());
+
+		while (!pushScreen) {
+			ppuCycle += cpuStep(r, memory);
+			ppuCycle = ppuStep(ppuCycle, memory, pushScreen, output.begin());
 		}
 	}
 
@@ -141,7 +163,7 @@ namespace gb {
 		template<typename ...args>
 		static _inline_ void operation(const args &...arg) {
 			//((arg), ...);
-			oic::System::log()->println(arg...);
+			oic::System::log()->debug(arg...);
 		}
 	#else
 		template<typename ...args>
@@ -829,17 +851,8 @@ namespace gb {
 		rgb(66, 81, 3)		//OFF color
 	};
 
-	//Copy the immediate buffer to the screen
-	_inline_ void pushScreen() {
-		auto *vpm = oic::System::viewportManager();
-		const auto &wind = vpm->operator[](0);
-		vpm->redraw(wind);
-
-		Sleep(1000);
-	}
-
 	//Render a line
-	_inline_ void pushLine(Emulator::Memory &mem) {
+	_inline_ void pushLine(Emulator::Memory &mem, u32 *ppu) {
 
 		usz
 			ly = mem.get<u8>(io::ly),
@@ -852,7 +865,6 @@ namespace gb {
 
 		wy; wx;
 
-		u32 *ppu = (u32*)MemoryMapper::ppuStart;
 		ppu += ly * specs::width;
 
 		u16 offset = 0x8000;
@@ -862,7 +874,7 @@ namespace gb {
 
 		//TODO: BG Map, Window map
 
-		oic::System::log()->println(ly, " ", ctrl, " ", wy, " ", wy);
+		oic::System::log()->debug(ly, " ", ctrl, " ", wy, " ", wy);
 
 		const u16 *tileset = (u16*)(MemoryMapper::mapping | offset);
 
@@ -886,17 +898,14 @@ namespace gb {
 	//Push blank screen to the immediate buffer
 	//Then push the immediate buffer to the screen buffer
 	template<bool on>
-	_inline_ void pushBlank() {
+	_inline_ void pushBlank(u32 *ppu, u32 *ppuEnd) {
 
-		u32 *ppu = (u32*)MemoryMapper::ppuStart;
+		for (u32 *it = ppu; it < ppuEnd; ++it)
+			*it = palette[on ? 0 : 4];
 
-		for (usz i = 0, j = MemoryMapper::ppuLength / 4; i < j; ++i)
-			ppu[i] = palette[on ? 0 : 4];
-
-		pushScreen();
 	}
 
-	_inline_ usz ppuStep(usz ppuCycle, Emulator::Memory &mem) {
+	_inline_ usz ppuStep(usz ppuCycle, Emulator::Memory &mem, bool &pushScreen, u32 *ppu) {
 
 		enum Modes {
 			HBLANK = 0,			HBLANK_INTERVAL = 51,
@@ -919,7 +928,7 @@ namespace gb {
 
 						//Push to screen and restart vblank
 						if (mem.get<u8>(io::ly) == specs::height) {
-							pushScreen();
+							pushScreen = true;
 							mem.getRef<u8>(io::IF) |= 1;		//Signal vblank
 							goto incrReset;
 						}
@@ -955,7 +964,7 @@ namespace gb {
 				case VRAM:
 
 					if (ppuCycle >= VRAM_INTERVAL) {
-						pushLine(mem);
+						pushLine(mem, ppu);
 						goto incrReset;
 					}
 

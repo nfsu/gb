@@ -3,6 +3,7 @@
 #include "emu/memory.hpp"
 #include "emu/stack.hpp"
 #include "gb/addresses.hpp"
+#include "types/grid.hpp"
 
 namespace gb {
 
@@ -19,12 +20,10 @@ namespace gb {
 	struct MemoryMapper {
 
 		static constexpr usz
+
 			cpuStart = 0x10000,
 			cpuLength = 0x10000,		//64 KiB of CPU accessible memory
 			mapping = cpuStart,			//Map the cpu memory to our memory space
-
-			ppuStart = cpuStart + cpuLength,
-			ppuLength = specs::width * specs::height * 4,	//160x144 RGBA (4-byte) color buffer
 
 			ramStart = 0x40000,
 			ramLength = 0x10000,		//64 KiB of RAM banks max
@@ -54,6 +53,7 @@ namespace gb {
 		~Emulator() = default;
 
 		void wait();
+		void doFrame(const oic::Grid2D<u32> &buffer);
 
 		using Memory = emu::Memory16<MemoryMapper>;
 		using Stack = emu::Stack<Memory, u16>;
@@ -68,6 +68,8 @@ namespace gb {
 
 		Registers r;
 		Memory memory;
+
+		oic::Grid2D<u32> output;
 	};
 
 	template<typename Memory, typename T, typename IO>

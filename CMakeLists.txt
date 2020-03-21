@@ -12,10 +12,13 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_SUPPRESS_REGENERATION true)
 
 add_subdirectory(emu)
+add_subdirectory(igx)
 
 include_directories(include)
 include_directories(emu/include)
 include_directories(emu/core2/include)
+include_directories(igx/include)
+include_directories(igx/ignis/include)
 
 file(GLOB_RECURSE gbSrc
 	"include/*.hpp"
@@ -29,7 +32,7 @@ add_executable(
 
 set_property(TARGET gb PROPERTY VS_DEBUGGER_WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/~)
 
-target_link_libraries(gb ocore)
+target_link_libraries(gb ocore ignis igx)
 
 if(MSVC)
     target_compile_options(gb PRIVATE /W4 /WX /MD /MP /wd4201 /Ob2)
