@@ -4,7 +4,7 @@
 #include "gb/emulator_interface.hpp"
 using namespace gb;
 
-EmulatorInterface::EmulatorInterface(Graphics &g, const Buffer &buf): g(g) , em(buf) {
+EmulatorInterface::EmulatorInterface(Graphics &g, const Buffer &buf, const Buffer &bios): g(g), em(buf, bios) {
 
 	emulationData = {
 		g, NAME("Emulation data"),
@@ -88,7 +88,7 @@ void EmulatorInterface::render(const ViewportInfo*) {
 }
 
 void EmulatorInterface::update(const ViewportInfo*, f64) {
-	em.doFrame(emulationData->getTextureData2D<u32>());
+	em.frame(emulationData->getTextureData2D<u32>());
 	emulationData->flush({ Vec2u8(0, 1) });
 }
 

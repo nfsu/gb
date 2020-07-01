@@ -32,7 +32,7 @@ namespace gb {
 
 	public:
 
-		EmulatorInterface(Graphics &g, const Buffer&);
+		EmulatorInterface(Graphics &g, const Buffer&, const Buffer &bios);
 
 		void init(ViewportInfo *vp) final override;
 		void release(const ViewportInfo*) final override;

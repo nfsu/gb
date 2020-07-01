@@ -22,12 +22,14 @@ include_directories(igx/ignis/include)
 
 file(GLOB_RECURSE gbSrc
 	"include/*.hpp"
+	"include/*.inc.hpp"
 	"src/*.cpp"
 )
 
 add_executable(
 	gb
 	${gbSrc}
+	CMakeLists.txt
 )
 
 set_property(TARGET gb PROPERTY VS_DEBUGGER_WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/~)
@@ -35,7 +37,7 @@ set_property(TARGET gb PROPERTY VS_DEBUGGER_WORKING_DIRECTORY ${CMAKE_SOURCE_DIR
 target_link_libraries(gb ocore ignis igx)
 
 if(MSVC)
-    target_compile_options(gb PRIVATE /W4 /WX /MD /MP /wd4201 /Ob2)
+    target_compile_options(gb PRIVATE /W4 /WX /MD /MP /wd26812 /wd4201 /EHsc /GR)
 else()
-    target_compile_options(gb PRIVATE -Wall -Wextra -pedantic -Werror)
+    target_compile_options(gb PRIVATE -Wall -Wpedantic -Wextra -Werror)
 endif()

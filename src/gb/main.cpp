@@ -8,10 +8,13 @@ int main() {
 
 	Buffer rom;
 	
-	if (System::files()->read("./opus5.gb", rom)) {
+	if (System::files()->read("./tetris.gb", rom)) {
+
+		Buffer bootRom;
+		System::files()->read("./gb_bios.bin", bootRom);
 
 		Graphics g;
-		EmulatorInterface em(g, rom);
+		EmulatorInterface em(g, rom, bootRom);
 
 		System::viewportManager()->create(
 			ViewportInfo(

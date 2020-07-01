@@ -1,44 +1,48 @@
 #pragma once
-#include "types/types.hpp"
+#include "addresses.hpp"
 
 namespace gb {
 
 	struct PSR {
 
-		static constexpr u8 zMask = 0x80, nMask = 0x40, hMask = 0x20, cMask = 0x10;
+		static constexpr u8
+			zMask = 0x80,
+			sMask = 0x40,
+			hMask = 0x20,
+			cMask = 0x10;
 
 		u8 v;
 
 		//H: the last operation caused overflow into the higher nibble
-		__forceinline bool carryHalf() const { return v & hMask; }
+		_inline_ bool carryHalf() const { return v & hMask; }
 
 		//C: the last operation caused overflow into the 9th bit
-		__forceinline bool carry() const { return v & cMask; }
+		_inline_ bool carry() const { return v & cMask; }
 
 		//Z: the last operation was zero
-		__forceinline bool zero() const { return v & zMask; }
+		_inline_ bool zero() const { return v & zMask; }
 
 		//N: subtraction was performed last operation
-		__forceinline bool subtract() const { return v & nMask; }
+		_inline_ bool subtract() const { return v & sMask; }
 
 		//Setters
 
-		__forceinline void carryHalf(bool b) { b ? v |= hMask : v &= ~hMask; }
-		__forceinline void carry(bool b) { b ? v |= cMask : v &= ~cMask; }
-		__forceinline void zero(bool b) { b ? v |= zMask : v &= ~zMask; }
-		__forceinline void subtract(bool b) { b ? v |= nMask : v &= ~nMask; }
+		_inline_ void carryHalf(bool b) { clearHalf(); v |= b * hMask; }
+		_inline_ void carry(bool b) { clearCarry(); v |= b * cMask; }
+		_inline_ void zero(bool b) { clearZero(); v |= b * zMask; }
+		_inline_ void subtract(bool b) { clearSubtract(); v |= b * sMask; }
 
-		__forceinline void setSubtract() { v |= nMask; }
-		__forceinline void clearSubtract() { v &= ~nMask; }
+		_inline_ void setSubtract() { v |= sMask; }
+		_inline_ void clearSubtract() { v &= ~sMask; }
 
-		__forceinline void setHalf() { v |= hMask; }
-		__forceinline void clearHalf() { v &= ~hMask; }
+		_inline_ void setHalf() { v |= hMask; }
+		_inline_ void clearHalf() { v &= ~hMask; }
 
-		__forceinline void setCarry() { v |= cMask; }
-		__forceinline void clearCarry() { v &= ~cMask; }
+		_inline_ void setCarry() { v |= cMask; }
+		_inline_ void clearCarry() { v &= ~cMask; }
 
-		__forceinline void setZero() { v |= zMask; }
-		__forceinline void clearZero() { v &= ~zMask; }
+		_inline_ void setZero() { v |= zMask; }
+		_inline_ void clearZero() { v &= ~zMask; }
 
 		template<typename T>
 		__forceinline void setCodes(T a) {
@@ -46,7 +50,7 @@ namespace gb {
 		}
 
 		template<bool sub, typename T>
-		__forceinline void setALU(T a, T, T c) {
+		_inline_ void setALU(T a, T, T c) {
 
 			carryHalf(c & 0x10);
 
@@ -58,7 +62,7 @@ namespace gb {
 				clearSubtract();
 			}
 
-			setCodes(c);
+			zero(a == 0);
 		}
 
 	};

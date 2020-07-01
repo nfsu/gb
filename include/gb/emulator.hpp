@@ -1,21 +1,16 @@
 #pragma once
-#include "registers.hpp"
 #include "emu/memory.hpp"
 #include "emu/stack.hpp"
+#include "gb/psr.hpp"
 #include "gb/addresses.hpp"
 #include "types/grid.hpp"
 
 namespace gb {
 
-	struct NIOHandler { 
-		template<typename T, typename Memory, usz mapping> 
-		static _inline_ usz exec(Memory *m, u16 addr, const T *t) { return 0; }
-	};
+	struct MemoryMapper;
 
-	struct IOHandler { 
-		template<typename T, typename Memory, usz mapping> 
-		static _inline_ usz exec(Memory *m, u16 addr, const T *t);
-	};
+	using Memory = emu::Memory16<MemoryMapper>;
+	using Stack = emu::Stack<Memory, u16>;
 
 	struct MemoryMapper {
 
@@ -31,99 +26,209 @@ namespace gb {
 			romStart = ramStart + ramLength,
 			romLength = 0x200000,		//2 MiB of ROM banks max
 
-			mmuStart = romStart + romLength,
-			mmuLength = 32,				//The MMU's variables, as well as IME
+			biosStart = romStart + romLength,
+			biosLength = 256,
+
+			mmuStart = biosStart + 0x10000,		//Align better
+			mmuLength = 32,						//The MMU's variables, as well as IME
 
 			memStart = cpuStart,
 			memLength = (mmuStart + mmuLength) - cpuStart;
 
-		template<typename Memory, typename T = void, typename IO = NIOHandler>
-		static _inline_ usz map(Memory *m, u16 a, const T *t = nullptr);
-
-		template<typename T, typename Memory, typename IO = NIOHandler>
+		template<typename T>
 		static _inline_ T read(Memory *m, u16 a);
 
-		template<typename T, typename Memory, typename IO = IOHandler>
+		static _inline_ void calculateRomOffset(Memory *m);
+
+		template<typename T>
 		static _inline_ void write(Memory *m, u16 a, const T &t);
 	};
 
 	struct Emulator {
 
-		Emulator(const Buffer &rom);
+		//Creation
+
+		Emulator(const Buffer &rom, const Buffer &bios);
 		~Emulator() = default;
 
-		void wait();
-		void doFrame(const oic::Grid2D<u32> &buffer);
+		//Emulation
 
-		using Memory = emu::Memory16<MemoryMapper>;
-		using Stack = emu::Stack<Memory, u16>;
+		void frame(const oic::Grid2D<u32> &buffer);
+		void frameNoSync(const oic::Grid2D<u32> &buffer);
+		void step(bool &pushScreen);
 
-		enum Numbers : usz {
-			FLAGS = MemoryMapper::mmuStart | 31
+		//"Hardware" constants
+		//
+
+		enum HardwareConstants : usz {
+
+			MBC_RAM				= (MemoryMapper::mmuStart | 0)  << 8,			//Memory bank controller memory offset
+			MBC_ROM				= (MemoryMapper::mmuStart | 8)  << 8,			//Memory bank controller memory offset
+
+			ROM_BANK			= (MemoryMapper::mmuStart | 16)  << 8,			//Memory bank controller memory offset
+			RAM_BANK			= (MemoryMapper::mmuStart | 17)  << 8,			//Memory bank controller memory offset
+
+			FLAGS				= (MemoryMapper::mmuStart    | 18) << 8,		//For switches; like enable interrupts
+
+			IME					= FLAGS | 0x01,									//Enable interrupts
+			ENABLE_ERAM			= FLAGS | 0x02,									//Enable extenral RAM (reading from it when disabled causes a crash)
+			ROM_RAM_MODE_SELECT = FLAGS | 0x04,									//Selecting the upper half of ROM memory or any other RAM bank
+			IS_IN_BIOS			= FLAGS | 0x08,									//Whether or not the bios is currently running
+
 		};
 
-		enum Flags {
-			IME = 1
+		enum MemoryControllerType : u8 {
+
+			ROM,
+
+			MBC1,
+			MBC1_R,
+			MBC1_RB,
+
+			MBC2 = 5,
+			MBC2_B,
+
+			ROM_R = 8,
+			ROM_RB,
+
+			MMM01 = 0xB,
+			MMM01_R,
+			MMM01_RB,
+
+			MBC3 = 0x11,
+			MBC3_R,
+			MBC3_RB,
+
+			MBC5 = 0x19,
+			MBC5_R,
+			MBC5_RB,
+			MBC5_RUMBLE,
+			MBC5_R_RUMBLE,
+			MBC5_RB_RUMBLE,
+
+			MBC6 = 0x20,
+
+			MBC7_RB_SENSOR_RUMBLE = 0x22,
+
+			POCKET_CAMERA = 0xFC,
+			BANDAI_TAMA5 = 0xFD,
+			HUC3 = 0xFE,
+			HUC1_RB = 0xFF
+
 		};
 
-		Registers r;
-		Memory memory;
+		//Memory and output
 
+		Memory m;
 		oic::Grid2D<u32> output;
+
+		//CR mapping
+		//B,C, D,E, H,L, (HL),A
+		//(HL) should be handled by the instruction itself since it uses the memory model
+		static constexpr usz registerMapping[] = {
+			1,0, 3,2, 5,4, usz_MAX,7 
+		};
+
+		//Registers
+		union {
+
+			//8-bit registers
+			struct {
+				u8 c, b, e, d, l, h;
+				PSR f;
+				u8 a;
+			};
+
+			//8-bit registers accessed as 16-bit
+			//and stack pointer & program counter
+			struct {
+				u16 bc, de, hl, af, sp, pc;
+			};
+
+			u8 regs[8];
+			u16 lregs[6]{};
+		};
+
+		ns lastTime = 0;
+		usz ppuCycle = 0;
+
+	private:
+
+		template<bool doSync>
+		void internalFrame(const oic::Grid2D<u32> &buffer);
+
+		//Debug
+
+		template<bool isCb = false, typename ...args>
+		_inline_ void operation(const args &...arg);
+
+		//Setting registers
+
+		template<u8 cr, typename T> _inline_ void set(const T &t);
+		template<u8 c, typename T> _inline_ void setc(const T &t);
+
+		//Getting value from address stored in instruction
+
+		template<u8 cr, typename T> _inline_ T get();
+		template<u8 c, typename T> _inline_ T getc();
+
+		//Getting a short register encoded in an instruction
+		template<u8 c> _inline_ u16 &shortReg();
+
+		//Getting address encoded in instruction
+
+		template<u8 s> _inline_ u16 addrFromReg();
+
+		//Setting hardware flags
+
+		template<bool enable, usz flag> _inline_ void setFlag();
+		template<usz flag> _inline_ bool getFlag();
+		template<usz flag> _inline_ bool getFlagFromAddress();
+
+		template<u8 addr> _inline_ usz reset();
+
+		//Ops
+
+		_inline_ usz halt();
+		_inline_ usz stop();
+
+		template<u8 c> _inline_ usz ld();
+		template<u8 c> _inline_ usz ldi();
+		template<u8 c> _inline_ usz lds();
+
+		template<u8 c> _inline_ usz inc();
+		template<u8 c> _inline_ usz incs();
+
+		template<u8 c> _inline_ usz performAlu(u8 b);
+		template<u8 c> _inline_ usz aluOp();
+
+		template<u8 jp, u8 check> _inline_ usz branch();
+		template<u8 c, u8 code> _inline_ usz jmp();
+		template<u8 c> _inline_ usz rst();
+
+		_inline_ usz cbInstruction();
+
+		template<u8 c> _inline_ bool cond();
+
+		//Switch cases
+
+		template<u8 c> _inline_ usz op256();
+		template<u8 c> _inline_ usz opCb();
+
+		//Steps
+
+		_inline_ usz cpuStep();
+		_inline_ usz interruptHandler();
+		_inline_ void ppuStep(bool &pushScreen, u32 *ppu);
+
+		//PPU helpers
+
+		template<bool on>
+		_inline_ void pushBlank(u32 *ppu, u32 *ppuEnd);
+
+		_inline_ void pushLine(u32 *ppu);
+
+
 	};
-
-	template<typename Memory, typename T, typename IO>
-	_inline_ usz MemoryMapper::map(Memory *m, u16 a, const T *t) {
-
-		t; m;
-
-		//TODO: Memory should also include memory not accessible to the emulator
-		//		Memory banks and things like screen RAM should be mapped at 0x10000 -> n so it's not directly accessible in the program
-
-		switch (a >> 12) {
-
-			case 0x0: case 0x1: case 0x2: case 0x3:
-			case 0x4: case 0x5: case 0x6: case 0x7:
-
-				if constexpr (!std::is_same_v<IO, NIOHandler>)
-					return IO::exec<T, Memory, mapping>(m, a, t);
-				else
-					return romStart + a;
-
-			case 0xC: case 0xD:
-				return ramStart + a - 0xC000;
-
-			//Reading from 0x1E000 -> 0x1FE00 is called illegal for the GB(C) by nintendo
-			//	Even though the hardware does it this way,
-			//	it isn't utilized and implementing it would add an overhead which isn't worth it.
-
-			//case 0xE:
-			//	return virtualMemory[0] | (a ^ (1 << 14));
-
-			case 0xF:
-
-				//if(a < 0xFE00)
-				//	return virtualMemory[0] | (a ^ (1 << 14));
-				if constexpr(!std::is_same_v<IO, NIOHandler>)
-					IO::exec<T, Memory, mapping>(m, a, t);
-
-
-		}
-
-		//Memory located in allocated range
-		return mapping | a;
-	}
-
-	template<typename T, typename Memory, typename IO>
-	_inline_ T MemoryMapper::read(Memory *m, u16 a) {
-		usz mapped = map(m, a);
-		return *(T*)mapped;
-	}
-
-	template<typename T, typename Memory, typename IO>
-	_inline_ void MemoryMapper::write(Memory *m, u16 a, const T &t) {
-		usz mapped = map<Memory, T, IO>(m, a, &t);
-		*(T*)mapped = t;
-	}
 
 }
