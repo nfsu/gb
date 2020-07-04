@@ -83,22 +83,25 @@ See [docs/instructions.md](docs/instructions.md).
 
 These following resources have greatly helped me:
 
-Part 1 - 10 [Gameboy emulation  in JavaScript](http://imrannazar.com/GameBoy-Emulation-in-JavaScript:-The-CPU).
-[The ultimate Game Boy Talk 33c3](https://www.youtube.com/watch?v=HyzD8pNlpwI).
-[Gameboy opcodes diagram](http://techgate.fr/gb-doc/gameboy-opcodes.html).
-[Gameboy memory controllers](http://gbdev.gg8.se/wiki/articles/Memory_Bank_Controllers).
-[Gameboy CPU manual](http://marc.rawer.de/Gameboy/Docs/GBCPUman.pdf).
-Tetris assembly code.
-[Gameboy memory map](http://gameboy.mongenel.com/dmg/asmmemmap.html).
+[Gameboy emulation  in JavaScript](http://imrannazar.com/GameBoy-Emulation-in-JavaScript:-The-CPU).  
+[The ultimate Game Boy Talk 33c3](https://www.youtube.com/watch?v=HyzD8pNlpwI).  
+[Gameboy opcodes diagram](http://techgate.fr/gb-doc/gameboy-opcodes.html).  
+[Gameboy memory controllers](http://gbdev.gg8.se/wiki/articles/Memory_Bank_Controllers).  
+[Gameboy CPU manual](http://marc.rawer.de/Gameboy/Docs/GBCPUman.pdf).  
+Tetris disassembly. (No link provided for possible piracy reasons).  
+Gameboy bios disassembly. (No link provided for piracy reasons).  
+[Gameboy memory map](http://gameboy.mongenel.com/dmg/asmmemmap.html).  
+[A look at the gameboy bootstrap](https://realboyemulator.wordpress.com/2013/01/03/a-look-at-the-game-boy-bootstrap-let-the-fun-begin/).  
+[Writing a gameboy emulator](https://cturt.github.io/cinoop.html).  
 
 ### Gbdev discord server
 
 The following people have helped me by giving advice (in no particular order) on how to approach certain things such as the PPU:
 
-PinoBatch
-Max (ded)
-NieDzejkob
-GameFuzion
-garrettgu10
-eightlittlebits
+PinoBatch  
+Max (ded)  
+NieDzejkob  
+GameFuzion  
+garrettgu10  
+eightlittlebits  
 gekkio
