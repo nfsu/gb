@@ -1,6 +1,0 @@
-[submodule "emu"]
-	path = emu
-	url = https://github.com/nfsu/emu
-[submodule "igx"]
-	path = igx
-	url = https://github.com/Oxsomi/igx
