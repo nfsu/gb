@@ -53,7 +53,7 @@ set_target_properties(gb PROPERTIES FOLDER NFSU/gb)
 
 add_subdirectory(core3)
 
-target_include_directories(gb PUBLIC inc/gb)
+target_include_directories(gb PUBLIC inc/emu)
 target_link_libraries(gb PUBLIC OxC3_platforms)
 
 file(GLOB_RECURSE ui "ui/*.c")

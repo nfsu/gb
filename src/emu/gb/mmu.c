@@ -1,0 +1,80 @@
+/* nfsu/gb, a basic gameboy (color) emulator.
+*  Copyright (C) 2023 NFSU / Nielsbishere (Niels Brunekreef)
+*  
+*  This program is free software: you can redistribute it and/or modify
+*  it under the terms of the GNU General Public License as published by
+*  the Free Software Foundation, either version 3 of the License, or
+*  (at your option) any later version.
+*  
+*  This program is distributed in the hope that it will be useful,
+*  but WITHOUT ANY WARRANTY; without even the implied warranty of
+*  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+*  GNU General Public License for more details.
+*  
+*  You should have received a copy of the GNU General Public License
+*  along with this program. If not, see https://github.com/Oxsomi/core3/blob/main/LICENSE.
+*  Be aware that GPL3 requires closed source products to be GPL3 too if released to the public.
+*  To prevent this a separate license will have to be requested at contact@osomi.net for a premium;
+*  This is called dual licensing.
+*/
+
+#include "gb/mmu.h"
+#include "platforms/platform.h"
+#include "platforms/ext/bufferx.h"
+#include "types/buffer.h"
+
+Error GBMMU_create(GBMMU **mem) {
+
+	if(!mem)
+		return Error_nullPointer(0);
+
+	if(*mem)
+		return Error_invalidParameter(0, 0);
+
+	Buffer buf = (Buffer) { 0 };
+	Error err = Buffer_createUninitializedBytesx(sizeof(GBMMU), &buf);
+
+	if(err.genericError)
+		return err;
+
+	*mem = (GBMMU*) buf.ptr;
+	return Error_none();
+}
+
+Bool GBMMU_free(GBMMU **mem) {
+
+	if(!mem || !*mem)
+		return true;
+
+	Buffer buf = Buffer_createManagedPtr(*mem, sizeof(**mem));
+	Bool b = Buffer_freex(&buf);
+
+	*mem = NULL;
+	return b;
+}
+
+Bool GBMMU_setBios(GBMMU *mem, Buffer bios) {
+
+	if(!mem || Buffer_length(bios) != sizeof(mem->bios))
+		return false;
+
+	mem->hasBios = true;
+	Buffer_copy(Buffer_createRef(mem->bios, sizeof(mem->bios)), bios);
+	return true;
+}
+
+Bool GBMMU_setRom(GBMMU *mem, Buffer rom) {
+
+	if(!mem || Buffer_length(rom) > sizeof(mem->rom))
+		return false;
+
+	mem->hasRom = true;
+	Buffer_copy(Buffer_createRef(mem->rom, sizeof(mem->rom)), rom);
+	return true;
+}
+
+Bool GBMMU_setU8(GBMMU *mem, U16 addr, U8 v, U8 *cycleCounter);
+Bool GBMMU_setU16(GBMMU *mem, U16 addr, U16 v, U8 *cycleCounter);
+
+Bool GBMMU_getU8(const GBMMU *mem, U16 addr, U8 *v, U8 *cycleCounter);
+Bool GBMMU_getU16(const GBMMU *mem, U16 addr, U16 *v, U8 *cycleCounter);
