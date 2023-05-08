@@ -35,7 +35,7 @@ typedef union GBRegisters {
 
 	//16-bit registers
 
-	union {
+	struct {
 		U16 af, bc, de, hl;		//16-bit access to 8-bit registers.
 		U16 sp;					//Stack pointer
 		U16 pc;					//Program counter

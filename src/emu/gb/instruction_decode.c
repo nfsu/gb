@@ -60,11 +60,62 @@ GBInstruction GBEmulator_decode(const GBEmulator *emulator, U16 addr) {
 		case 0x37:	result.opcodeType = SCF;	break;
 		case 0x3F:	result.opcodeType = CCF;	break;
 
-		case 0xD9:	result.opcodeType = RETI;	break;
-
 		//TODO: Stop is suffixed with 0x00
 
 		case 0x10:	result.opcodeType = STOP;	break;
+
+		//Return (unconditional)
+
+		case 0xD9:
+			result.opcodeType = RETI;
+			cycles += 3; 
+			break;
+
+		case 0xC9:
+			result.opcodeType = RET;
+			cycles += 3;
+			result.reg1 = 4;
+			break;
+
+		//LD (a16),SP
+
+		case 0x08:
+
+			if(!GBMMU_getU16(emulator->memory, addr, &result.intermediate, &cycles))
+				return result;
+
+			addr += 2;
+			cycles += 2;
+
+			result.opcodeType = LD_SP;
+			break;
+
+		//Jump (unconditional)
+
+		case 0xC3:
+
+			if(!GBMMU_getU16(emulator->memory, addr, &result.intermediate, &cycles))
+				return result;
+
+			addr += 2;
+
+			++cycles;
+			result.opcodeType = JP;
+			result.reg1 = 4;
+			break;
+
+		//Call
+
+		case 0xCD:	
+
+			if(!GBMMU_getU16(emulator->memory, addr, &result.intermediate, &cycles))
+				return result;
+
+			addr += 2;
+
+			result.opcodeType = CALL;
+			cycles += 3; 
+			break;
 
 		//Extended instruction
 
@@ -86,14 +137,14 @@ GBInstruction GBEmulator_decode(const GBEmulator *emulator, U16 addr) {
 				//Set
 
 				if (vlo >= 0xC0) {
-					result.intermediate = (v - 0xC0) >> 3;
+					result.intermediate = (vlo - 0xC0) >> 3;
 					result.opcodeType = SET;
 				}
 
 				//Reset
 
 				else {
-					result.intermediate = (v - 0x80) >> 3;
+					result.intermediate = (vlo - 0x80) >> 3;
 					result.opcodeType = RES;
 				}
 			}
@@ -105,7 +156,7 @@ GBInstruction GBEmulator_decode(const GBEmulator *emulator, U16 addr) {
 				//Get bit
 
 				if (vlo >= 0x40) {
-					result.intermediate = (v - 0x40) >> 3;
+					result.intermediate = (vlo - 0x40) >> 3;
 					result.opcodeType = BIT;
 				}
 
@@ -115,7 +166,7 @@ GBInstruction GBEmulator_decode(const GBEmulator *emulator, U16 addr) {
 
 					if(vlo >= 0x20) {
 
-						if(v >= 0x30)
+						if(vlo >= 0x30)
 							result.opcodeType = vlo >= 0x38 ? SRL : SWAP;
 
 						else result.opcodeType = vlo >= 0x28 ? SRA : SLA;
@@ -123,7 +174,7 @@ GBInstruction GBEmulator_decode(const GBEmulator *emulator, U16 addr) {
 
 					else {
 
-						if(v >= 0x10)
+						if(vlo >= 0x10)
 							result.opcodeType = vlo >= 0x18 ? RR : RL;
 
 						else result.opcodeType = vlo >= 0x08 ? RRC : RLC;
@@ -142,26 +193,123 @@ GBInstruction GBEmulator_decode(const GBEmulator *emulator, U16 addr) {
 
 			if (v >= 0x80) {
 
-				//Push, pop, most jumps and some alu
+				U8 subType = v & 7;
 
-				if (v >= 0xC0) {
-					//TODO:
+				//Push, pop and most jumps
+
+				if (v >= 0xC0 && (subType != 6)) {
+
+					switch (subType) {
+
+						//Conditional return
+
+						case 0: {
+
+							++cycles;
+							cycleMaxDelta = 3;
+
+							switch (v & 0x18) {
+								case 0x00:	result.reg1 = 2;	break;
+								case 0x08:	result.reg1 = 0;	break;
+								case 0x10:	result.reg1 = 1;	break;
+								case 0x18:	result.reg1 = 3;	break;
+							}
+
+							result.opcodeType = RET;
+							break;
+						}
+
+						//POP
+
+						case 1:
+							result.opcodeType = POP;
+							result.reg = GBRegisters_instructionReg16_1[(v - 0xC0) >> 4];
+							cycles += 2;
+							break;
+
+						//Jump
+
+						case 2:
+
+							if(!GBMMU_getU16(emulator->memory, addr, &result.intermediate, &cycles))
+								return result;
+
+							addr += 2;
+						
+							switch (v & 0x18) {
+								case 0x00:	result.reg1 = 2;	break;
+								case 0x08:	result.reg1 = 0;	break;
+								case 0x10:	result.reg1 = 1;	break;
+								case 0x18:	result.reg1 = 3;	break;
+							}
+
+							cycleMaxDelta = 1;
+							result.opcodeType = JP;
+							break;
+
+						//Already handled explicitly
+
+						case 3: break;
+
+						//Call
+
+						case 4:
+
+							if(!GBMMU_getU16(emulator->memory, addr, &result.intermediate, &cycles))
+								return result;
+
+							addr += 2;
+						
+							switch (v & 0x18) {
+								case 0x00:	result.reg1 = 2;	break;
+								case 0x08:	result.reg1 = 0;	break;
+								case 0x10:	result.reg1 = 1;	break;
+								case 0x18:	result.reg1 = 3;	break;
+							}
+
+							cycleMaxDelta = 3;
+							result.opcodeType = CALL;
+							break;
+
+						//PUSH
+
+						case 5:
+							result.opcodeType = PUSH;
+							result.reg = GBRegisters_instructionReg16_1[(v - 0xC0) >> 4];
+							cycles += 3;
+							break;
+
+						//Handled by ALU branch
+
+						case 6: break;
+
+						//RST
+
+						case 7:
+							result.opcodeType = RST;
+							result.intermediate = ((v - 0xC0) & 0x30) | (v & 8);
+							cycles += 3;
+							break;
+					}
 				}
 
 				//ALU
 
 				else {
 
+					U8 rel = v & 0x3F;
+					Bool isIntermediate = v >= 0xC0;
+
 					//AND, XOR, OR, CP
 
-					if (v >= 0xA0) {
+					if (rel >= 0x20) {
 
 						result.reg = GBRegisters_instructionReg8[v & 7];
 
-						if(v >= 0xB0)
-							result.opcodeType = v >= 0xB8 ? CP : OR;
+						if(rel >= 0x30)
+							result.opcodeType = rel >= 0x38 ? CP : OR;
 
-						else result.opcodeType = v >= 0xA8 ? XOR : AND;
+						else result.opcodeType = rel >= 0x28 ? XOR : AND;
 					}
 
 					//ADD, ADC, SUB, SBC
@@ -173,9 +321,9 @@ GBInstruction GBEmulator_decode(const GBEmulator *emulator, U16 addr) {
 
 						//SUB, SBC
 
-						if(v >= 0x90) {
+						if(rel >= 0x10) {
 
-							if(v >= 0x98)
+							if(rel >= 0x18)
 								result.opcodeType = SBC;
 							
 							else {
@@ -187,12 +335,25 @@ GBInstruction GBEmulator_decode(const GBEmulator *emulator, U16 addr) {
 
 						//ADD, ADC
 
-						else result.opcodeType = v >= 0x88 ? ADC : ADD;
+						else result.opcodeType = rel >= 0x08 ? ADC : ADD;
+					}
+
+					//If intermediate, we have no register we work on.
+
+					if (isIntermediate) {
+
+						//Intermediate stored next to the instruction
+
+						if(!GBMMU_getU8(emulator->memory, addr++, (U8*) &result.intermediate, &cycles))
+							return result;
+
+						result.reg = result.reg1 ? 1 : 0;
+						result.reg1 = 0;
 					}
 
 					//(HL) will incur another read, which takes 1 m cycle.
 
-					if(result.reg == 8 || result.reg1 == 8)
+					else if(result.reg == 8 || result.reg1 == 8)
 						++cycles;
 				}
 			}
@@ -257,14 +418,15 @@ GBInstruction GBEmulator_decode(const GBEmulator *emulator, U16 addr) {
 
 								cycleMaxDelta = 1;
 
-								switch (v) {
-									case 0x20:	result.reg1 = 2;	break;
-									case 0x28:	result.reg1 = 0;	break;
-									case 0x30:	result.reg1 = 1;	break;
-									case 0x38:	result.reg1 = 3;	break;
+								switch (v & 0x18) {
+									case 0x00:	result.reg1 = 2;	break;
+									case 0x08:	result.reg1 = 0;	break;
+									case 0x10:	result.reg1 = 1;	break;
+									case 0x18:	result.reg1 = 3;	break;
 								}
 							}
 						
+							result.opcodeType = JR;
 							break;
 
 						//LD 16-bit register and ADD
@@ -297,7 +459,7 @@ GBInstruction GBEmulator_decode(const GBEmulator *emulator, U16 addr) {
 
 						case 2: {
 
-							result.reg = U8_min(1 + (v >> 4), 3);
+							result.reg = U8_min((U8)(1 + (v >> 4)), 3);
 							result.reg1 = 1;
 							result.opcodeType = LD_A_TO_ADDR;
 
@@ -372,7 +534,7 @@ GBInstruction GBEmulator_decode(const GBEmulator *emulator, U16 addr) {
 	//Assign length and timings
 
 	result.opcode = v;
-	result.length = addr - prevAddr;
+	result.length = (U8)(addr - prevAddr);
 	result.cyclesBest = cycles;							//M cycles
 	result.cyclesWorst = cycles + cycleMaxDelta;		//M cycles
 	return result;

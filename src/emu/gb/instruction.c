@@ -61,8 +61,8 @@ Error GBInstruction_serialize(GBInstruction instr, CharString *str) {
 		case RST:
 			return CharString_formatx(
 				str, "RST %c%cH", 
-				C8_hex(instr.intermediate >> 4), 
-				C8_hex(instr.intermediate & 0xF)
+				C8_hex((U8)(instr.intermediate >>  4)),
+				C8_hex((U8)(instr.intermediate & 0xF))
 			);
 
 		//Call
@@ -84,7 +84,7 @@ Error GBInstruction_serialize(GBInstruction instr, CharString *str) {
 
 			return CharString_formatx(
 				str, 
-				"%s %s%i",
+				"%s %s$%X",
 				name,
 				conditions[instr.reg1],
 				instr.opcodeType == JR ? (I8) instr.intermediate : 
@@ -98,14 +98,14 @@ Error GBInstruction_serialize(GBInstruction instr, CharString *str) {
 			return CharString_formatx(str, "LD %s,%s", reg, reg1);
 
 		case LD8_TO_REG:
-			return CharString_formatx(str, "LD %s,%u", reg, instr.intermediate);
+			return CharString_formatx(str, "LD %s,$%X", reg, instr.intermediate);
 
 		case LD_SP:
 			return CharString_formatx(str, "LD (%u),SP", instr.intermediate);
 
 		case LD16_TO_REG:
 			return CharString_formatx(
-				str, "LD %s,%u", GBRegisters_reg16[instr.reg], instr.intermediate
+				str, "LD %s,$%X", GBRegisters_reg16[instr.reg], instr.intermediate
 			);
 
 		case LD_A_FROM_ADDR:
@@ -127,7 +127,7 @@ Error GBInstruction_serialize(GBInstruction instr, CharString *str) {
 
 			return 
 				instr.reg <= 8 ? CharString_formatx(str, "%s A,%s", name, reg) :
-				CharString_formatx(str, "%s A,%u", name, instr.intermediate);
+				CharString_formatx(str, "%s A,$%X", name, instr.intermediate);
 		}
 
 		case INC16:
@@ -160,7 +160,7 @@ Error GBInstruction_serialize(GBInstruction instr, CharString *str) {
 
 			return 
 				instr.reg <= 8 ? CharString_formatx(str, "%s %s", name, reg) :
-				CharString_formatx(str, "%s %u", name, instr.intermediate);
+				CharString_formatx(str, "%s $%X", name, instr.intermediate);
 		}
 
 		//Pop/push
@@ -196,7 +196,7 @@ Error GBInstruction_serialize(GBInstruction instr, CharString *str) {
 					instr.opcodeType == RES ? "RES %u,%s" : 
 					"SET %u,%s"
 				),
-				instr.intermediate, 
+				(U16)instr.intermediate, 
 				reg
 			);
 
@@ -212,7 +212,4 @@ Error GBInstruction_serialize(GBInstruction instr, CharString *str) {
 	return Error_none();
 }
 
-Error GBInstruction_deserialize(CharString str, GBInstruction *instr) {
-	//TODO:
-	return Error_unimplemented(0);
-}
+Error GBInstruction_deserialize(CharString str, GBInstruction *instr);

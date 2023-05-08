@@ -57,7 +57,7 @@ int Program_run() {
 	Buffer buf = (Buffer) { 0 };
 	Window *wind = NULL;
 
-	GBEmulator gb = (GBEmulator) { 0 };
+	GBEmulator *gb = NULL;
 
 	//Grab bios
 
@@ -66,19 +66,19 @@ int Program_run() {
 
 	//Start up emulator
 
-	if(!GBEmulator_setBios(&gb, buf))
+	if(!GBEmulator_setBios(gb, buf))
 		_gotoIfError(clean, Error_invalidOperation(0));
 
 	Buffer_freex(&buf);
 
-	while (gb.registers.pc < 0x100) {
+	while (gb->registers.pc < 0x100) {
 
-		_gotoIfError(clean, GBEmulator_printInstructionAt(&gb, gb.registers.pc))
+		_gotoIfError(clean, GBEmulator_printInstructionAt(gb, gb->registers.pc))
 
-		if(!GBEmulator_step(&gb, NULL))
+		if(!GBEmulator_step(gb, NULL))
 			_gotoIfError(clean, Error_invalidOperation(1));
 
-		_gotoIfError(clean, GBEmulator_printState(&gb));
+		_gotoIfError(clean, GBEmulator_printState(gb));
 	}
 
     //Make window

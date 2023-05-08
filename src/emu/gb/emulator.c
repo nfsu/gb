@@ -85,7 +85,7 @@ Bool GBEmulator_setRom(GBEmulator *emulator, Buffer bios) {
 
 Error GBEmulator_printInstructionAt(const GBEmulator *emulator, U16 addr) {
 
-	GBInstruction instr = GBEmulator_decode(emulator, emulator->registers.pc);
+	GBInstruction instr = GBEmulator_decode(emulator, addr);
 
 	if(!instr.opcodeType)
 		return Error_invalidState(0);
@@ -127,7 +127,7 @@ Error GBEmulator_stringifyState(const GBEmulator *emulator, CharString *str) {
 		"de = %u (%04X)\n"
 		"hl = %u (%04X)\n"
 		"sp = %u (%04X)\n"
-		"pc = %u (%04X)\n",
+		"pc = %u (%04X)\n"
 		"\n",
 
 		r.a, r.a,

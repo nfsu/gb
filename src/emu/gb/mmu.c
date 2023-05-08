@@ -76,5 +76,75 @@ Bool GBMMU_setRom(GBMMU *mem, Buffer rom) {
 Bool GBMMU_setU8(GBMMU *mem, U16 addr, U8 v, U8 *cycleCounter);
 Bool GBMMU_setU16(GBMMU *mem, U16 addr, U16 v, U8 *cycleCounter);
 
-Bool GBMMU_getU8(const GBMMU *mem, U16 addr, U8 *v, U8 *cycleCounter);
-Bool GBMMU_getU16(const GBMMU *mem, U16 addr, U16 *v, U8 *cycleCounter);
+Bool GBMMU_getU8(const GBMMU *mem, U16 addr, U8 *v, U8 *cycleCounter) {
+
+	if(!mem || !v || !cycleCounter)
+		return false;
+
+	++*cycleCounter;
+
+	//Half the address space is allocated to ROM (and bios in first section)
+
+	if(addr < 32 * KIBI) {
+
+		//BIOS is mapped first 256 bytes.
+
+		if(!mem->booted && addr < sizeof(mem->bios)) {
+
+			if(!mem->hasBios)
+				return false;
+
+			*v = *(const U8*)(mem->bios + addr);
+			return true;
+		}
+
+		//ROM
+
+		if(!mem->hasRom)
+			return false;
+
+		//TODO: Allow swapping ROM banks
+
+		*v = *(const U8*)(mem->rom + addr);		
+	}
+
+	//VRAM, eRAM
+
+	else if (addr < 48 * KIBI) {
+
+		if(addr < 40 * KIBI)
+			*v = mem->VRAM[addr & 0x1FFF];
+
+		//TODO: Cartridge controls how much is available
+
+		else *v = mem->xRAM[addr & 0x1FFF];
+	}
+
+	//(shadow) RAM
+
+	else if (addr < 0xFDFF)
+		*v = mem->RAM[addr & 0x1FFF];
+
+	//Sprite info, I/O, zero ram (automatically indexes it)
+
+	else *v = mem->spriteInfo[addr - 0xFE00];
+
+	return true;
+}
+
+Bool GBMMU_getU16(const GBMMU *mem, U16 addr, U16 *v, U8 *cycleCounter) {
+
+	if(!mem || !v || !cycleCounter)
+		return false;
+
+	U8 a, b;
+
+	if(!GBMMU_getU8(mem, addr++, &a, cycleCounter))
+		return false;
+
+	if(!GBMMU_getU8(mem, addr++, &b, cycleCounter))
+		return false;
+
+	*v = ((U16)b << 8) | a;
+	return true;
+}

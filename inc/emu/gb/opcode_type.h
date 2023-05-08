@@ -36,7 +36,7 @@ typedef enum EGBOpcodeType {
 
 	LD_REG_TO_REG,		//Load register to register
 
-	LD_SP,				//Load sp into address in register
+	LD_SP,				//Load sp into address in instruction
 
 	INC16,				//Increment 16-bit register
 	INC,				//Increment 8-bit register
@@ -54,7 +54,6 @@ typedef enum EGBOpcodeType {
 	CP,					//Compare 8-bit register (or intermediate) with A
 
 	ADD16_HL,			//Add 16-bit register to HL
-	ADD,				//Add 8-bit intermediate
 
 	RLCA,				//Rotate left circular accumulator
 	RLA,				//Rotate left accumulator

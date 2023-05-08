@@ -46,8 +46,8 @@ Bool GBMMU_free(GBMMU **mem);
 Bool GBMMU_setBios(GBMMU *mem, Buffer bios);
 Bool GBMMU_setRom(GBMMU *mem, Buffer rom);
 
-Bool GBMMU_setU8(GBMMU *mem, U16 addr, U8 v, U32 *cycleCounter);
-Bool GBMMU_setU16(GBMMU *mem, U16 addr, U16 v, U32 *cycleCounter);
+Bool GBMMU_setU8(GBMMU *mem, U16 addr, U8 v, U8 *cycleCounter);
+Bool GBMMU_setU16(GBMMU *mem, U16 addr, U16 v, U8 *cycleCounter);
 
-Bool GBMMU_getU8(const GBMMU *mem, U16 addr, U8 *v, U32 *cycleCounter);
-Bool GBMMU_getU16(const GBMMU *mem, U16 addr, U16 *v, U32 *cycleCounter);
+Bool GBMMU_getU8(const GBMMU *mem, U16 addr, U8 *v, U8 *cycleCounter);
+Bool GBMMU_getU16(const GBMMU *mem, U16 addr, U16 *v, U8 *cycleCounter);

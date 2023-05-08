@@ -25,6 +25,9 @@
 typedef struct GBInstruction GBInstruction;
 typedef struct GBMMU GBMMU;
 
+typedef struct Error Error;
+typedef struct CharString CharString;
+
 typedef struct GBEmulator {
 
 	GBRegisters registers;
