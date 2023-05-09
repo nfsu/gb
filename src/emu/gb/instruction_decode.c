@@ -113,8 +113,54 @@ GBInstruction GBEmulator_decode(const GBEmulator *emulator, U16 addr) {
 
 			addr += 2;
 
+			result.reg1 = 4;
 			result.opcodeType = CALL;
 			cycles += 3; 
+			break;
+
+		//LDHA and LD (C),a
+
+		case 0xE0: case 0xF0:
+		case 0xE2: case 0xF2:
+
+			if(!(v & 7))
+				if(!GBMMU_getU8(emulator->memory, addr++, (U8*) &result.intermediate, &cycles))
+					return result;
+
+			++cycles;			//Load from (i) or (C)
+
+			if(v >= 0xF0) {
+
+				result.reg = 1;
+
+				if(v & 7)
+					result.reg = 3;
+			}
+
+			else {
+
+				result.reg1 = 1;
+
+				if(v & 7)
+					result.reg = 3;
+			}
+
+			result.opcodeType = LDHA;
+			break;
+
+		//LD A,($FFFF)
+
+		case 0xEA: case 0xFA:
+
+			if(!GBMMU_getU16(emulator->memory, addr, &result.intermediate, &cycles))
+				return result;
+
+			addr += 2;
+
+			if(v >= 0xF0)
+				result.reg = 1;
+
+			result.opcode = LDA16;
 			break;
 
 		//Extended instruction
@@ -460,14 +506,10 @@ GBInstruction GBEmulator_decode(const GBEmulator *emulator, U16 addr) {
 						case 2: {
 
 							result.reg = U8_min((U8)(1 + (v >> 4)), 3);
-							result.reg1 = 1;
 							result.opcodeType = LD_A_TO_ADDR;
 
-							if ((v & 0xF) >= 0x8) {
-								result.reg1 = result.reg;
-								result.reg = 1;
+							if ((v & 0xF) >= 0x8)
 								result.opcodeType = LD_A_FROM_ADDR;
-							}
 
 							result.intermediate = (U8) I8_max((I8)(v >> 4) - 1, 0);
 							++cycles;

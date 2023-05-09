@@ -36,6 +36,9 @@ typedef enum EGBOpcodeType {
 
 	LD_REG_TO_REG,		//Load register to register
 
+	LDHA,				//LDH A,($FF00 + ..) and LD A,($FF00 + C) (if reg1 is set)
+	LDA16,				//LD A,($FFFF)
+
 	LD_SP,				//Load sp into address in instruction
 
 	INC16,				//Increment 16-bit register

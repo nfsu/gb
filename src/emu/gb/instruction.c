@@ -108,6 +108,16 @@ Error GBInstruction_serialize(GBInstruction instr, CharString *str) {
 				str, "LD %s,$%X", GBRegisters_reg16[instr.reg], instr.intermediate
 			);
 
+		case LDA16:
+			return CharString_formatx(str, instr.reg ? "LD A,($%04X)" : "LD ($%04X),A", instr.intermediate);
+
+		case LDHA:
+
+			if(!instr.reg1 || !instr.reg)
+				return CharString_formatx(str, instr.reg == 1 ? "LD A,($FF00+%X)" : "LD ($FF00+%X),A", instr.intermediate);
+
+			return CharString_formatx(str, instr.reg == 1 ? "LD A,($FF00+C)" : "LD ($FF00+C),A");
+
 		case LD_A_FROM_ADDR:
 		case LD_A_TO_ADDR:
 			return CharString_formatx(

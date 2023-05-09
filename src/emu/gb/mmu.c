@@ -78,10 +78,11 @@ Bool GBMMU_setU16(GBMMU *mem, U16 addr, U16 v, U8 *cycleCounter);
 
 Bool GBMMU_getU8(const GBMMU *mem, U16 addr, U8 *v, U8 *cycleCounter) {
 
-	if(!mem || !v || !cycleCounter)
+	if(!mem || !v)
 		return false;
 
-	++*cycleCounter;
+	if(cycleCounter)
+		++*cycleCounter;
 
 	//Half the address space is allocated to ROM (and bios in first section)
 
@@ -134,7 +135,7 @@ Bool GBMMU_getU8(const GBMMU *mem, U16 addr, U8 *v, U8 *cycleCounter) {
 
 Bool GBMMU_getU16(const GBMMU *mem, U16 addr, U16 *v, U8 *cycleCounter) {
 
-	if(!mem || !v || !cycleCounter)
+	if(!mem || !v)
 		return false;
 
 	U8 a, b;
