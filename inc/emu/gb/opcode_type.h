@@ -28,7 +28,7 @@ typedef enum EGBOpcodeType {
 
 	NOP,				//Nothing
 
-	LD16_TO_REG,		//Load 16-bit intermediate to register
+	LD16_TO_REG,		//Load 16-bit intermediate (or register) to register
 	LD8_TO_REG,			//Load 8-bit intermediate to register
 
 	LD_A_TO_ADDR,		//Store A into address in register (intermediate = 1: -, 2: +)
@@ -56,7 +56,7 @@ typedef enum EGBOpcodeType {
 	OR,					//OR 8-bit register (or intermediate) with A
 	CP,					//Compare 8-bit register (or intermediate) with A
 
-	ADD16_HL,			//Add 16-bit register to HL
+	ADD16,				//Add 16-bit register/value to register
 
 	RLCA,				//Rotate left circular accumulator
 	RLA,				//Rotate left accumulator
@@ -99,19 +99,5 @@ typedef enum EGBOpcodeType {
 	JP,					//Jump to address
 	RET,				//Return from function
 	CALL				//Call function
-
-	//TODO:
-	/*LDH (a8),A 
-	LDH A,(a8)
-	LD (C),A
-	LD A,(C)
-
-	ADD SP,r8 
-	LD HL,SP+r8
-	LD SP,HL 
-	LD (a16),A 
-	LD A,(a16)
-
-	JP (HL)*/
 
 } EGBOpcodeType;

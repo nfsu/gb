@@ -104,6 +104,46 @@ GBInstruction GBEmulator_decode(const GBEmulator *emulator, U16 addr) {
 			result.reg1 = 4;
 			break;
 
+		case 0xE9:						//Jump to (HL)
+			result.opcodeType = JP;
+			result.reg1 = 4;
+			result.reg = 8;
+			break;
+
+		//LD SP,HL
+
+		case 0xF9:
+			++cycles;
+			result.reg = 4;
+			result.reg1 = 3;
+			result.opcodeType = LD16_TO_REG;
+			break;
+
+		//LD HL,SP+i8
+
+		case 0xF8:
+
+			if(!GBMMU_getU8(emulator->memory, addr++, (U8*) &result.intermediate, &cycles))
+				return result;
+
+			++cycles;
+			result.reg = 3;
+			result.reg1 = 4;
+			result.opcodeType = LD16_TO_REG;
+			break;
+
+		//ADD SP,r8
+
+		case 0xE8:
+
+			if(!GBMMU_getU8(emulator->memory, addr++, (U8*) &result.intermediate, &cycles))
+				return result;
+
+			cycles += 2;
+			result.opcodeType = ADD16;
+			result.reg = 4;
+			break;
+
 		//Call
 
 		case 0xCD:	
@@ -160,7 +200,7 @@ GBInstruction GBEmulator_decode(const GBEmulator *emulator, U16 addr) {
 			if(v >= 0xF0)
 				result.reg = 1;
 
-			result.opcode = LDA16;
+			result.opcodeType = LDA16;
 			break;
 
 		//Extended instruction
@@ -484,7 +524,9 @@ GBInstruction GBEmulator_decode(const GBEmulator *emulator, U16 addr) {
 							//ADD
 
 							if ((v & 0xF) >= 0x8) {
-								result.opcodeType = ADD16_HL;
+								result.reg1 = result.reg;
+								result.reg = 3;
+								result.opcodeType = ADD16;
 								++cycles;
 							}
 
@@ -524,7 +566,7 @@ GBInstruction GBEmulator_decode(const GBEmulator *emulator, U16 addr) {
 							result.reg = GBRegisters_instructionReg16_2[v >> 4];
 							++cycles;
 
-							result.opcodeType = (v & 0xF) >= 0x8 ? DEC : INC;
+							result.opcodeType = (v & 0xF) >= 0x8 ? DEC16 : INC16;
 							break;
 
 						//INC/DEC 8-bit register

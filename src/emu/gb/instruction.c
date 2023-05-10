@@ -84,7 +84,7 @@ Error GBInstruction_serialize(GBInstruction instr, CharString *str) {
 
 			return CharString_formatx(
 				str, 
-				"%s %s$%X",
+				instr.reg == 8 ? "%s %s(HL)" : "%s %s$%X",
 				name,
 				conditions[instr.reg1],
 				instr.opcodeType == JR ? (I8) instr.intermediate : 
@@ -104,6 +104,13 @@ Error GBInstruction_serialize(GBInstruction instr, CharString *str) {
 			return CharString_formatx(str, "LD (%u),SP", instr.intermediate);
 
 		case LD16_TO_REG:
+
+			if(instr.reg1)
+				return CharString_formatx(
+					str, "LD %s,%s+$%X",
+					GBRegisters_reg16[instr.reg], GBRegisters_reg16[instr.reg1], instr.intermediate
+				);
+
 			return CharString_formatx(
 				str, "LD %s,$%X", GBRegisters_reg16[instr.reg], instr.intermediate
 			);
@@ -136,20 +143,33 @@ Error GBInstruction_serialize(GBInstruction instr, CharString *str) {
 			const C8 *name = instr.opcodeType == ADD ? "ADD" : (instr.opcodeType == ADC ? "ADC" : "SBC");
 
 			return 
-				instr.reg <= 8 ? CharString_formatx(str, "%s A,%s", name, reg) :
+				instr.reg <= 8 ? CharString_formatx(str, "%s A,%s", name, reg1) :
 				CharString_formatx(str, "%s A,$%X", name, instr.intermediate);
 		}
 
 		case INC16:
 		case DEC16:
-		case ADD16_HL:
+			return CharString_formatx(
+				str, 
+				instr.opcodeType == INC16 ? "INC %s" : "DEC %s",
+				GBRegisters_reg16[instr.reg]
+			);
+
+		case ADD16:
+
+			if(instr.reg1)
+				return CharString_formatx(
+					str, 
+					"ADD %s,%s",
+					GBRegisters_reg16[instr.reg],
+					GBRegisters_reg16[instr.reg1]
+				);
 
 			return CharString_formatx(
 				str, 
-				instr.opcodeType == ADD16_HL ? "ADD HL,%s" : (
-					instr.opcodeType == INC16 ? "INC %s" : "DEC %s"
-				),
-				GBRegisters_reg16[instr.reg]
+				"ADD %s,$%02X",
+				GBRegisters_reg16[instr.reg],
+				instr.intermediate
 			);
 
 		case SUB: 
@@ -169,7 +189,7 @@ Error GBInstruction_serialize(GBInstruction instr, CharString *str) {
 			}
 
 			return 
-				instr.reg <= 8 ? CharString_formatx(str, "%s %s", name, reg) :
+				instr.reg && instr.reg <= 8 ? CharString_formatx(str, "%s %s", name, reg) :
 				CharString_formatx(str, "%s $%X", name, instr.intermediate);
 		}
 
