@@ -73,8 +73,45 @@ Bool GBMMU_setRom(GBMMU *mem, Buffer rom) {
 	return true;
 }
 
-Bool GBMMU_setU8(GBMMU *mem, U16 addr, U8 v, U8 *cycleCounter);
-Bool GBMMU_setU16(GBMMU *mem, U16 addr, U16 v, U8 *cycleCounter);
+Bool GBMMU_setU8(GBMMU *mem, U16 addr, U8 v) {
+
+	//First 32 KiB is ROM or bios and not accessible here!
+
+	if(!mem || addr < 32 * KIBI)
+		return false;
+
+	if (addr < 48 * KIBI) {
+
+		if(addr < 40 * KIBI)
+			mem->VRAM[addr & 0x1FFF] = v;
+
+		//TODO: Cartridge controls how much is available
+
+		else mem->xRAM[addr & 0x1FFF] = v;
+	}
+
+	//(shadow) RAM
+
+	else if (addr < 0xFDFF)
+		mem->RAM[addr & 0x1FFF] = v;
+
+	//Sprite info, I/O, zero ram (automatically indexes it)
+
+	else mem->spriteInfo[addr - 0xFE00] = v;
+
+	return true;
+}
+
+Bool GBMMU_setU16(GBMMU *mem, U16 addr, U16 v) {
+
+	if(!GBMMU_setU8(mem, addr++, (U8)(v >> 8), NULL))
+		return false;
+
+	if (!GBMMU_setU8(mem, addr++, (U8)v, NULL))		//Can't revert previous one oops
+		return false;
+
+	return true;
+}
 
 Bool GBMMU_getU8(const GBMMU *mem, U16 addr, U8 *v, U8 *cycleCounter) {
 

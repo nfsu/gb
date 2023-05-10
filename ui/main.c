@@ -73,12 +73,8 @@ int Program_run() {
 
 	while (gb->registers.pc < 0x100) {
 
-		_gotoIfError(clean, GBEmulator_printInstructionAt(gb, gb->registers.pc))
-
 		if(!GBEmulator_step(gb, NULL))
-			_gotoIfError(clean, Error_invalidOperation(1));
-
-		_gotoIfError(clean, GBEmulator_printState(gb));
+			break;
 	}
 
     //Make window
