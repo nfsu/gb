@@ -45,14 +45,25 @@ Bool GBEmulator_setU8(GBEmulator *emu, U8 reg, U8 v) {
 	return true;
 }
 
+Bool GBEmulator_pushStack8(GBEmulator *emu, U16 v) {
+	return GBMMU_setU8(emu->memory, emu->registers.sp--, v);
+}
+
+Bool GBEmulator_pushStack16(GBEmulator *emu, U16 v) {
+	return GBEmulator_pushStack8(emu, (U8)(v >> 8)) && GBEmulator_pushStack8(emu, (U8)v);
+}
+
 Bool GBEmulator_execute(GBEmulator *emu, GBInstruction i) {
 
 	if(!emu)
 		return false;
 
+	GBRegisters *r = &emu->registers;
+	GBMMU *mem = emu->memory;
+
 	//Instruction was read, increment program counter
 
-	emu->registers.pc += i.length;
+	r->pc += i.length;
 
 	//Jump instructions have different timings if executed, they set this.
 
@@ -79,6 +90,94 @@ Bool GBEmulator_execute(GBEmulator *emu, GBInstruction i) {
 
 			break;
 		}
+
+		//LDH (a8),A and LD (C),A (and reverse) 
+		//are both considered LDHA type.
+
+		case LDHA: {
+
+			//Load A register, (0xFF00 + C or i)
+
+			U8 res;
+
+			if(i.reg1 == 1)
+				res = r->a;
+
+			else if(i.reg1 == 3) {
+				if(!GBMMU_getU8(mem, 0xFF00 + r->c, &res, NULL))
+					return false;
+			}
+
+			else if(!GBMMU_getU8(mem, 0xFF00 + i.intermediate, &res, NULL))
+				return false;
+
+			//Store into A, (0xFF00 + C or i)
+
+			if(i.reg == 1)
+				r->a = res;
+
+			else if(i.reg == 3) {
+				if(!GBMMU_setU8(mem, 0xFF00 + r->c, res))
+					return false;
+			}
+
+			else if(!GBMMU_setU8(mem, 0xFF00 + i.intermediate, res))
+				return false;
+		
+			break;
+		}
+
+		//LD (a16),A and reverse.
+
+		case LDA16: {
+
+			//Load
+
+			U8 v = r->a;
+
+			if(i.reg1 != 1 && GBMMU_getU8(mem, i.intermediate, &v, NULL))
+				return false;
+
+			//Store
+
+			if(i.reg == 1)
+				r->a = v;
+
+			else if(!GBMMU_setU8(mem, i.intermediate, v))
+				return false;
+
+			break;
+		}
+
+		//LD 8-bit constant
+
+		case LD8_TO_REG: {
+
+			if(i.reg < 8)
+				r->reg8[i.reg] = (U8) i.intermediate;
+
+			else if(!GBMMU_setU8(mem, r->hl, i.intermediate))
+				return false;
+
+			break;
+		}
+
+		//LD 16-bit constant
+
+		case LD16_TO_REG:
+			r->reg16[i.reg] = i.intermediate;
+			break;
+
+		//Reset pushes PC onto the stack and redirects to i.intermediate
+
+		case RST:
+			GBEmulator_pushStack16(emu, r->pc);
+			r->pc = i.intermediate;
+			break;
+
+		//TODO: LD SP,HL and LD HL,SP+r8
+		//TODO: LD (r16+-),d16
+		//TODO: LD (a16),SP
 
 		//TODO: ALU
 

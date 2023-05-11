@@ -47,3 +47,5 @@ void GBPSR_setCarryHalfTo(GBPSR *psr, Bool b);
 void GBPSR_setCarryTo(GBPSR *psr, Bool b);
 void GBPSR_setZeroTo(GBPSR *psr, Bool b);
 void GBPSR_setSubtractTo(GBPSR *psr, Bool b);
+
+void GBPSR_setBits(GBPSR *psr, I8 zero, I8 subtract, I8 half, I8 carry);

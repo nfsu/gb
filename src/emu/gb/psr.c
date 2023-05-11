@@ -39,3 +39,21 @@ void GBPSR_setCarryHalfTo(GBPSR *psr, Bool b) { b ? GBPSR_setCarryHalf(psr) : GB
 void GBPSR_setCarryTo(GBPSR *psr, Bool b) { b ? GBPSR_setCarry(psr) : GBPSR_resetCarry(psr); }
 void GBPSR_setZeroTo(GBPSR *psr, Bool b) { b ? GBPSR_setZero(psr) : GBPSR_resetZero(psr); }
 void GBPSR_setSubtractTo(GBPSR *psr, Bool b) { b ? GBPSR_setSubtract(psr) : GBPSR_resetSubtract(psr); }
+
+void GBPSR_setBits(GBPSR *psr, I8 zero, I8 subtract, I8 half, I8 carry) {
+
+	if(!psr)
+		return;
+
+	if(zero > 0)
+		GBPSR_setZeroTo(psr, zero > 1);
+
+	if(subtract > 0)
+		GBPSR_setSubtractTo(psr, subtract > 1);
+
+	if(half > 0)
+		GBPSR_setCarryHalfTo(psr, half > 1);
+
+	if(carry > 0)
+		GBPSR_setCarryTo(psr, carry > 1);
+}
