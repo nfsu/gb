@@ -22,6 +22,7 @@
 #include "gb/instruction.h"
 #include "gb/opcode_type.h"
 #include "gb/mmu.h"
+#include "platforms/log.h"
 
 Bool GBEmulator_getU8(GBEmulator *emu, U8 reg, U8 *res) {
 
@@ -179,7 +180,90 @@ Bool GBEmulator_execute(GBEmulator *emu, GBInstruction i) {
 		//TODO: LD (r16+-),d16
 		//TODO: LD (a16),SP
 
-		//TODO: ALU
+		//ALU
+
+		case SBC:
+		case SUB: 
+		case ADC:
+		case ADD: {
+
+			U8 t = (U8)i.intermediate, prev = r->a;
+
+			if(i.reg && !GBEmulator_getU8(emu, i.reg, &t))
+				return false;
+
+			Bool isAdc = i.opcodeType == ADC, isAdd = isAdc || i.opcodeType == ADD;
+			Bool carry = (isAdc || i.opcodeType == SBC) && GBPSR_carry(r->f);
+
+			U16 v = isAdd ? (U16)r->a + t + carry : r->a - t - carry;
+			r->a = (U8)v;
+
+			Bool H = !isAdd ? (prev & 16) && !(r->a & 16) : (prev & 8) && !(v & 8);
+			GBPSR_setBits(&r->f, !r->a, !isAdd, H, v > U8_MAX);
+
+			break;
+		}
+
+		case OR:
+		case AND:
+		case XOR: {
+
+			U8 t = (U8)i.intermediate;
+
+			if(i.reg && !GBEmulator_getU8(emu, i.reg, &t))
+				return false;
+
+			if(i.opcodeType == OR)
+				r->a |= t;
+
+			else if(i.opcodeType == XOR)
+				r->a ^= t;
+
+			else r->a &= t;
+			
+			GBPSR_setBits(&r->f, !r->a, 0, i.opcodeType == AND, 0);
+			break;
+		}
+
+		case INC:
+		case DEC: {
+
+			U8 prev = i.intermediate;
+
+			if(!GBEmulator_getU8(emu, i.reg, &prev))
+				return false;
+
+			U8 res = i.opcodeType == DEC ? prev - 1 : prev + 1;
+
+			if(!GBEmulator_setU8(emu, i.reg, res))
+				return false;
+			
+			Bool H = i.opcodeType == DEC ? (prev & 16) && !(res & 16) : (prev & 8) && !(res & 8);
+			GBPSR_setBits(&r->f, !res, i.opcodeType == DEC, H, -1);
+			break;
+		}
+
+		case CP: {
+
+			//TODO: Compare
+
+			break;
+		}
+
+		case DAA:	break;		//TODO: 
+		case SCF:	break;		//TODO: 
+		case CPL:	break;		//TODO: 
+		case CCF:	break;		//TODO: 
+
+		case INC16:
+			++r->reg16[i.reg];
+			break;
+
+		case DEC16: 
+			--r->reg16[i.reg];
+			break;
+
+		case ADD16:	break;		//TODO:
 
 		//Bitwise operators
 
@@ -192,7 +276,7 @@ Bool GBEmulator_execute(GBEmulator *emu, GBInstruction i) {
 			if(!GBEmulator_getU8(emu, i.reg, &res))
 				return false;
 
-			GBPSR_setBits(emu->registers.f, (res >> i.intermediate) & 1, 0, 1, -1);
+			GBPSR_setBits(&r->f, (res >> i.intermediate) & 1, 0, 1, -1);
 			break;
 		}
 
@@ -218,8 +302,93 @@ Bool GBEmulator_execute(GBEmulator *emu, GBInstruction i) {
 		}
 
 		//TODO:
-		//case RLC, RRC, RL, RR, SLA, SRA, SWAP, SRL
+		//case SLA, SRA, SWAP, SRL
 
+		//Rotate carry into left or right bit,
+		//Or rotate self left/right.
+
+		case RL:
+		case RR: 
+		case RRC:
+		case RLC: {
+
+			U8 t;
+
+			if(!GBEmulator_getU8(emu, i.reg, &t))
+				return false;
+
+			Bool isLeft = i.opcodeType & 1;
+			Bool C = t & (isLeft ? 0x80 : 0x01);
+			U8 newBit = GBPSR_carry(r->f);
+
+			if(i.opcodeType < RL)
+				newBit = isLeft ? t >> 7 : t & 1;
+
+			U8 v = isLeft ? (t << 1) | newBit : (t >> 1) | (newBit << 7);
+
+			if(!GBEmulator_setU8(emu, i.reg, v))
+				return false;
+
+			GBPSR_setBits(&r->f, !v, 0, 0, C);
+			break;
+		}
+
+		//Shift right and left using 0 bit.
+		//As well as signed right shift (preserves carry).
+
+		case SRL:
+		case SRA:
+		case SLA: {
+			//TODO:
+			break;
+		}
+
+		//Swap two nibbles
+
+		case SWAP: {
+
+			U8 t;
+
+			if(!GBEmulator_getU8(emu, i.reg, &t))
+				return false;
+
+			if(!GBEmulator_setU8(emu, (t << 4) | (t >> 4), &t))
+				return false;
+
+			GBPSR_setBits(&r->f, !t, 0, 0, 0);
+			break;
+		}
+
+		//Special instructions
+
+		case STOP:
+			//TODO:
+			break;
+
+		//Halt until interrupt
+
+		case HALT:
+			//TODO:
+			break;
+
+		//Disable and enable interrupts
+
+		case DI:
+			//TODO:
+			break;
+
+		case EI:
+			//TODO:
+			break;
+
+		//Nothing
+
+		case NOP:
+			break;
+
+		default:
+			Log_errorLn("Unsupported instruction in execution!");
+			return false;
 	}
 
 	//Add cycles so PPU can sync
