@@ -71,9 +71,22 @@ int Program_run() {
 
 	Buffer_freex(&buf);
 
+	//Grab rom
+
+	_gotoIfError(clean, File_read(CharString_createConstRefCStr("game.gb"), 1 * SECOND, &buf));
+
+	//Start up emulator
+
+	if(!GBEmulator_setRom(gb, buf))
+		_gotoIfError(clean, Error_invalidOperation(1));
+
+	Buffer_freex(&buf);
+
+	//Boot emulator
+
 	while (gb->registers.pc < 0x100) {
 
-		if(!GBEmulator_step(gb, NULL))
+		if(!GBEmulator_step(gb, NULL, true))
 			break;
 	}
 

@@ -72,7 +72,7 @@ Error GBInstruction_serialize(GBInstruction instr, CharString *str) {
 		case RET:
 		case CALL: {
 
-			static const C8 *conditions[] = { "Z,", "C,", "NZ,", "NC,", "" };
+			static const C8 *conditions[] = { "NZ,", "Z,", "NC,", "C,", "" };
 
 			const C8 *name = "JP";
 

@@ -104,10 +104,10 @@ Bool GBMMU_setU8(GBMMU *mem, U16 addr, U8 v) {
 
 Bool GBMMU_setU16(GBMMU *mem, U16 addr, U16 v) {
 
-	if(!GBMMU_setU8(mem, addr++, (U8)(v >> 8), NULL))
+	if(!GBMMU_setU8(mem, addr++, (U8)(v >> 8)))
 		return false;
 
-	if (!GBMMU_setU8(mem, addr++, (U8)v, NULL))		//Can't revert previous one oops
+	if (!GBMMU_setU8(mem, addr++, (U8)v))		//Can't revert previous one oops
 		return false;
 
 	return true;

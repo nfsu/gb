@@ -27,9 +27,9 @@
 Bool GBEmulator_getU8(GBEmulator *emu, U8 reg, U8 *res) {
 
 	if(reg != 8)
-		res = emu->registers.reg8[reg];
+		*res = emu->registers.reg8[reg];
 
-	else if(!GBMMU_getU8(emu->memory, emu->registers.hl, &res, NULL))
+	else if(!GBMMU_getU8(emu->memory, emu->registers.hl, res, NULL))
 		return false;
 
 	return true;
@@ -46,12 +46,20 @@ Bool GBEmulator_setU8(GBEmulator *emu, U8 reg, U8 v) {
 	return true;
 }
 
-Bool GBEmulator_pushStack8(GBEmulator *emu, U16 v) {
-	return GBMMU_setU8(emu->memory, emu->registers.sp--, v);
+Bool GBEmulator_pushStack8(GBEmulator *emu, U8 v) {
+	return GBMMU_setU8(emu->memory, --emu->registers.sp, v);
 }
 
 Bool GBEmulator_pushStack16(GBEmulator *emu, U16 v) {
 	return GBEmulator_pushStack8(emu, (U8)(v >> 8)) && GBEmulator_pushStack8(emu, (U8)v);
+}
+
+Bool GBEmulator_popStack8(GBEmulator *emu, U8 *v) {
+	return GBMMU_getU8(emu->memory, emu->registers.sp++, v, NULL);
+}
+
+Bool GBEmulator_popStack16(GBEmulator *emu, U16 *v) {
+	return GBEmulator_popStack8(emu, (U8*)v) && GBEmulator_popStack8(emu, (U8*)v + 1);
 }
 
 Bool GBEmulator_execute(GBEmulator *emu, GBInstruction i) {
@@ -86,7 +94,7 @@ Bool GBEmulator_execute(GBEmulator *emu, GBInstruction i) {
 			if(!GBEmulator_getU8(emu, i.reg1, &res))
 				return false;
 
-			if(!GBEmulator_setU8(emu, i.reg, &res))
+			if(!GBEmulator_setU8(emu, i.reg, res))
 				return false;
 
 			break;
@@ -157,7 +165,7 @@ Bool GBEmulator_execute(GBEmulator *emu, GBInstruction i) {
 			if(i.reg < 8)
 				r->reg8[i.reg] = (U8) i.intermediate;
 
-			else if(!GBMMU_setU8(mem, r->hl, i.intermediate))
+			else if(!GBMMU_setU8(mem, r->hl, (U8) i.intermediate))
 				return false;
 
 			break;
@@ -172,18 +180,48 @@ Bool GBEmulator_execute(GBEmulator *emu, GBInstruction i) {
 		//Reset pushes PC onto the stack and redirects to i.intermediate
 
 		case RST:
-			GBEmulator_pushStack16(emu, r->pc);
+
+			if(!GBEmulator_pushStack16(emu, r->pc))
+				return false;
+
 			r->pc = i.intermediate;
 			break;
 
-		//TODO: LD SP,HL and LD HL,SP+r8
-		//TODO: LD (r16+-),d16
-		//TODO: LD (a16),SP
+		case LD_A_TO_ADDR:
+
+			if(!GBMMU_setU8(mem, r->reg16[i.reg], r->a))
+				return false;
+
+			if(i.intermediate == 1)
+				++r->reg16[i.reg];
+
+			else if(i.intermediate == 2)
+				--r->reg16[i.reg];
+			
+			break;
+
+		case LD_A_FROM_ADDR:
+
+			if(!GBMMU_getU8(mem, r->reg16[i.reg], &r->a, NULL))
+				return false;
+
+			if(i.intermediate == 1)
+				++r->reg16[i.reg];
+
+			else if(i.intermediate == 2)
+				--r->reg16[i.reg];
+
+			break;
+
+		case LD_SP:
+			//TODO:
+			break;
 
 		//ALU
 
 		case SBC:
 		case SUB: 
+		case CP:
 		case ADC:
 		case ADD: {
 
@@ -196,10 +234,12 @@ Bool GBEmulator_execute(GBEmulator *emu, GBInstruction i) {
 			Bool carry = (isAdc || i.opcodeType == SBC) && GBPSR_carry(r->f);
 
 			U16 v = isAdd ? (U16)r->a + t + carry : r->a - t - carry;
-			r->a = (U8)v;
 
-			Bool H = !isAdd ? (prev & 16) && !(r->a & 16) : (prev & 8) && !(v & 8);
-			GBPSR_setBits(&r->f, !r->a, !isAdd, H, v > U8_MAX);
+			if(i.opcodeType != CP)		//CP is only meant to affect registers, not A reg
+				r->a = (U8)v;
+
+			Bool H = !isAdd ? (prev & 16) && !((U8)v & 16) : (prev & 8) && !(v & 8);
+			GBPSR_setBits(&r->f, !(U8)v, !isAdd, H, v > U8_MAX);
 
 			break;
 		}
@@ -228,7 +268,7 @@ Bool GBEmulator_execute(GBEmulator *emu, GBInstruction i) {
 		case INC:
 		case DEC: {
 
-			U8 prev = i.intermediate;
+			U8 prev;
 
 			if(!GBEmulator_getU8(emu, i.reg, &prev))
 				return false;
@@ -243,17 +283,21 @@ Bool GBEmulator_execute(GBEmulator *emu, GBInstruction i) {
 			break;
 		}
 
-		case CP: {
-
-			//TODO: Compare
-
+		case DAA:
+			//TODO: 
 			break;
-		}
 
-		case DAA:	break;		//TODO: 
-		case SCF:	break;		//TODO: 
-		case CPL:	break;		//TODO: 
-		case CCF:	break;		//TODO: 
+		case SCF:
+			//TODO: 
+			break;
+
+		case CPL:
+			//TODO: 
+			break;
+
+		case CCF:
+			//TODO: 
+			break;
 
 		case INC16:
 			++r->reg16[i.reg];
@@ -263,7 +307,9 @@ Bool GBEmulator_execute(GBEmulator *emu, GBInstruction i) {
 			--r->reg16[i.reg];
 			break;
 
-		case ADD16:	break;		//TODO:
+		case ADD16:	
+			//TODO:
+			break;
 
 		//Bitwise operators
 
@@ -276,7 +322,7 @@ Bool GBEmulator_execute(GBEmulator *emu, GBInstruction i) {
 			if(!GBEmulator_getU8(emu, i.reg, &res))
 				return false;
 
-			GBPSR_setBits(&r->f, (res >> i.intermediate) & 1, 0, 1, -1);
+			GBPSR_setBits(&r->f, !((res >> i.intermediate) & 1), 0, 1, -1);
 			break;
 		}
 
@@ -295,14 +341,11 @@ Bool GBEmulator_execute(GBEmulator *emu, GBInstruction i) {
 
 			else res |= (1 << i.intermediate);
 
-			if(!GBEmulator_setU8(emu, i.reg, &res))
+			if(!GBEmulator_setU8(emu, i.reg, res))
 				return false;
 
 			break;	
 		}
-
-		//TODO:
-		//case SLA, SRA, SWAP, SRL
 
 		//Rotate carry into left or right bit,
 		//Or rotate self left/right.
@@ -333,13 +376,43 @@ Bool GBEmulator_execute(GBEmulator *emu, GBInstruction i) {
 			break;
 		}
 
+		case RLA:
+		case RRA:
+		case RRCA:
+		case RLCA: {
+
+			U8 t = r->a;
+			Bool isLeft = i.opcodeType & 1;
+			Bool C = t & (isLeft ? 0x80 : 0x01);
+			U8 newBit = GBPSR_carry(r->f);
+
+			if(i.opcodeType < RLA)
+				newBit = isLeft ? t >> 7 : t & 1;
+
+			r->a = isLeft ? (t << 1) | newBit : (t >> 1) | (newBit << 7);
+			GBPSR_setBits(&r->f, 0, 0, 0, C);
+			break;
+		}
+
 		//Shift right and left using 0 bit.
 		//As well as signed right shift (preserves carry).
 
 		case SRL:
 		case SRA:
 		case SLA: {
-			//TODO:
+
+			U8 t;
+
+			if(!GBEmulator_getU8(emu, i.reg, &t))
+				return false;
+		
+			Bool C = t & (i.opcodeType == SLA ? 0x80 : 0x01);
+			U8 v = i.opcodeType == SLA ? (t << 1) : (i.opcodeType == SRA ? (t & 0x80) : 0) | (t >> 1);
+			
+			if(!GBEmulator_setU8(emu, i.reg, v))
+				return false;
+			
+			GBPSR_setBits(&r->f, !v, 0, 0, C);
 			break;
 		}
 
@@ -352,12 +425,28 @@ Bool GBEmulator_execute(GBEmulator *emu, GBInstruction i) {
 			if(!GBEmulator_getU8(emu, i.reg, &t))
 				return false;
 
-			if(!GBEmulator_setU8(emu, (t << 4) | (t >> 4), &t))
+			if(!GBEmulator_setU8(emu, i.reg, (t << 4) | (t >> 4)))
 				return false;
 
 			GBPSR_setBits(&r->f, !t, 0, 0, 0);
 			break;
 		}
+
+		//Pushing and popping from/to the stack.
+
+		case PUSH:
+
+			if(!GBEmulator_pushStack16(emu, r->reg16[i.reg]))
+				return false;
+
+			break;
+
+		case POP:
+
+			if(!GBEmulator_popStack16(emu, &r->reg16[i.reg]))
+				return false;
+
+			break;
 
 		//Special instructions
 
@@ -378,6 +467,72 @@ Bool GBEmulator_execute(GBEmulator *emu, GBInstruction i) {
 			break;
 
 		case EI:
+			//TODO:
+			break;
+			
+		case JP:
+		case CALL:
+		case RET:
+		case JR: {
+
+			Bool condition = true;
+
+			switch ((EConditionType) i.reg1) {
+
+				case EConditionType_C:
+					condition = GBPSR_carry(r->f);
+					break;
+
+				case EConditionType_NC:
+					condition = !GBPSR_carry(r->f);
+					break;
+
+				case EConditionType_Z:
+					condition = GBPSR_zero(r->f);
+					break;
+
+				case EConditionType_NZ:
+					condition = !GBPSR_zero(r->f);
+					break;
+			}
+
+			//Branch
+
+			if (condition) {
+
+				switch (i.opcodeType) {
+
+					case JR:
+						r->pc += (I8)(U8)i.intermediate;
+						break;
+
+					case JP:
+						r->pc = i.intermediate;
+						break;
+
+					case CALL:
+
+						if (!GBEmulator_pushStack16(emu, r->pc))
+							return false;
+
+						r->pc = i.intermediate;
+						break;
+
+					case RET:
+
+						if (!GBEmulator_popStack16(emu, &r->pc))
+							return false;
+
+						break;
+				}
+			}
+
+			else didExec = false;
+
+			break;
+		}
+
+		case RETI:	
 			//TODO:
 			break;
 

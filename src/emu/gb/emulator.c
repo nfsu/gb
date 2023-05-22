@@ -164,7 +164,7 @@ Error GBEmulator_printState(const GBEmulator *emulator) {
 	return Error_none();
 }
 
-Bool GBEmulator_step(GBEmulator *emulator, GBInstruction *instruction) {
+Bool GBEmulator_step(GBEmulator *emulator, GBInstruction *instruction, Bool debug) {
 
 	if(!emulator)
 		return false;
@@ -177,5 +177,23 @@ Bool GBEmulator_step(GBEmulator *emulator, GBInstruction *instruction) {
 	if(instruction)
 		*instruction = instr;
 
-	return GBEmulator_execute(emulator, instr);
+	if (debug) {
+
+		CharString str = CharString_createNull();
+		Error err = GBInstruction_serialize(instr, &str);
+
+		if(err.genericError)
+			return false;
+
+		Log_debugLn("%s", str.ptr);
+		CharString_freex(&str);
+	}
+
+	if(!GBEmulator_execute(emulator, instr))
+		return false;
+
+	if(debug)
+		GBEmulator_printState(emulator);
+
+	return true;
 }

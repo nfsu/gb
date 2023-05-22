@@ -59,8 +59,8 @@ typedef enum EGBOpcodeType {
 	ADD16,				//Add 16-bit register/value to register
 
 	RLCA,				//Rotate left circular accumulator
-	RLA,				//Rotate left accumulator
 	RRCA,				//Rotate right circular accumulator
+	RLA,				//Rotate left accumulator
 	RRA,				//Rotate right accumulator
 
 	DAA,
@@ -101,3 +101,14 @@ typedef enum EGBOpcodeType {
 	CALL				//Call function
 
 } EGBOpcodeType;
+
+typedef enum EConditionType {
+
+	EConditionType_NZ,
+	EConditionType_Z,
+	EConditionType_NC,
+	EConditionType_C,
+	EConditionType_Unconditional
+
+} EConditionType;
+

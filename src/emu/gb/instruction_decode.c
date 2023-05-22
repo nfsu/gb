@@ -60,7 +60,7 @@ GBInstruction GBEmulator_decode(const GBEmulator *emulator, U16 addr) {
 		case 0x37:	result.opcodeType = SCF;	break;
 		case 0x3F:	result.opcodeType = CCF;	break;
 
-		//TODO: Stop is suffixed with 0x00
+		//TODO: Stop is (sometimes) suffixed with 0x00
 
 		case 0x10:	result.opcodeType = STOP;	break;
 
@@ -74,7 +74,7 @@ GBInstruction GBEmulator_decode(const GBEmulator *emulator, U16 addr) {
 		case 0xC9:
 			result.opcodeType = RET;
 			cycles += 3;
-			result.reg1 = 4;
+			result.reg1 = EConditionType_Unconditional;
 			break;
 
 		//LD (a16),SP
@@ -101,12 +101,12 @@ GBInstruction GBEmulator_decode(const GBEmulator *emulator, U16 addr) {
 
 			++cycles;
 			result.opcodeType = JP;
-			result.reg1 = 4;
+			result.reg1 = EConditionType_Unconditional;
 			break;
 
 		case 0xE9:						//Jump to (HL)
 			result.opcodeType = JP;
-			result.reg1 = 4;
+			result.reg1 = EConditionType_Unconditional;
 			result.reg = 8;
 			break;
 
@@ -153,7 +153,7 @@ GBInstruction GBEmulator_decode(const GBEmulator *emulator, U16 addr) {
 
 			addr += 2;
 
-			result.reg1 = 4;
+			result.reg1 = EConditionType_Unconditional;
 			result.opcodeType = CALL;
 			cycles += 3; 
 			break;
@@ -323,10 +323,10 @@ GBInstruction GBEmulator_decode(const GBEmulator *emulator, U16 addr) {
 							addr += 2;
 						
 							switch (v & 0x18) {
-								case 0x00:	result.reg1 = 2;	break;
-								case 0x08:	result.reg1 = 0;	break;
-								case 0x10:	result.reg1 = 1;	break;
-								case 0x18:	result.reg1 = 3;	break;
+									case 0x00:	result.reg1 = EConditionType_NZ;	break;
+									case 0x08:	result.reg1 = EConditionType_Z;		break;
+									case 0x10:	result.reg1 = EConditionType_NC;	break;
+									case 0x18:	result.reg1 = EConditionType_C;		break;
 							}
 
 							cycleMaxDelta = 1;
@@ -347,10 +347,10 @@ GBInstruction GBEmulator_decode(const GBEmulator *emulator, U16 addr) {
 							addr += 2;
 						
 							switch (v & 0x18) {
-								case 0x00:	result.reg1 = 2;	break;
-								case 0x08:	result.reg1 = 0;	break;
-								case 0x10:	result.reg1 = 1;	break;
-								case 0x18:	result.reg1 = 3;	break;
+								case 0x00:	result.reg1 = EConditionType_NZ;	break;
+								case 0x08:	result.reg1 = EConditionType_Z;		break;
+								case 0x10:	result.reg1 = EConditionType_NC;	break;
+								case 0x18:	result.reg1 = EConditionType_C;		break;
 							}
 
 							cycleMaxDelta = 3;
@@ -492,7 +492,7 @@ GBInstruction GBEmulator_decode(const GBEmulator *emulator, U16 addr) {
 							if(v == 0x18) {
 								++cycles;
 								cycleMaxDelta = 0;
-								result.reg1 = 4;
+								result.reg1 = EConditionType_Unconditional;
 							}
 
 							//Conditional relative jumps.
@@ -505,10 +505,10 @@ GBInstruction GBEmulator_decode(const GBEmulator *emulator, U16 addr) {
 								cycleMaxDelta = 1;
 
 								switch (v & 0x18) {
-									case 0x00:	result.reg1 = 2;	break;
-									case 0x08:	result.reg1 = 0;	break;
-									case 0x10:	result.reg1 = 1;	break;
-									case 0x18:	result.reg1 = 3;	break;
+									case 0x00:	result.reg1 = EConditionType_NZ;	break;
+									case 0x08:	result.reg1 = EConditionType_Z;		break;
+									case 0x10:	result.reg1 = EConditionType_NC;	break;
+									case 0x18:	result.reg1 = EConditionType_C;		break;
 								}
 							}
 						

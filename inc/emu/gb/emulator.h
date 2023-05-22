@@ -51,4 +51,4 @@ Error GBEmulator_stringifyState(const GBEmulator *emulator, CharString *str);
 Error GBEmulator_printState(const GBEmulator *emulator);
 
 Bool GBEmulator_execute(GBEmulator *emulator, GBInstruction instruction);
-Bool GBEmulator_step(GBEmulator *emulator, GBInstruction *instruction);
+Bool GBEmulator_step(GBEmulator *emulator, GBInstruction *instruction, Bool debug);
